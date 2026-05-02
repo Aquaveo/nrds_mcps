@@ -76,7 +76,7 @@ A public test instance runs on Google Cloud Run, free tier:
 | **Auth** | None (`--allow-unauthenticated`) |
 | **GCP project** | `ibis-436806` |
 | **Region** | `us-central1` |
-| **Image** | `us-central1-docker.pkg.dev/ibis-436806/nrds-mcps/nrds-mcps:0.1.0` (mirrored from `ghcr.io/aquaveo/nrds-mcps:0.1.0` — Cloud Run does not pull from ghcr.io directly) |
+| **Image** | `us-central1-docker.pkg.dev/ibis-436806/nrds-mcps-remote/aquaveo/nrds-mcps:0.1.0` (Artifact Registry **remote repository** transparently proxying `ghcr.io/aquaveo/nrds-mcps`; Cloud Run does not pull from ghcr.io directly, so the AR remote repo is the bridge) |
 
 ### Quick test
 
@@ -107,21 +107,14 @@ asyncio.run(smoke())
 
 ### Redeploy procedure (when a new image tag lands)
 
-The image must be mirrored into Artifact Registry first because Cloud Run does not pull from ghcr.io directly:
-
 ```bash
 NEW_TAG=0.2.0  # replace with the actual release tag
-docker pull "ghcr.io/aquaveo/nrds-mcps:$NEW_TAG"
-docker tag "ghcr.io/aquaveo/nrds-mcps:$NEW_TAG" \
-  "us-central1-docker.pkg.dev/ibis-436806/nrds-mcps/nrds-mcps:$NEW_TAG"
-docker push "us-central1-docker.pkg.dev/ibis-436806/nrds-mcps/nrds-mcps:$NEW_TAG"
-
 gcloud run deploy nrds-mcps \
-  --image="us-central1-docker.pkg.dev/ibis-436806/nrds-mcps/nrds-mcps:$NEW_TAG" \
+  --image="us-central1-docker.pkg.dev/ibis-436806/nrds-mcps-remote/aquaveo/nrds-mcps:$NEW_TAG" \
   --region=us-central1
 ```
 
-Cloud Run does a zero-downtime traffic shift to the new revision.
+Cloud Run pulls through the AR remote repo (`nrds-mcps-remote`), which transparently fetches the layer from `ghcr.io/aquaveo/nrds-mcps:$NEW_TAG` on first request and caches them locally. **No `docker pull` / `tag` / `push` step needed** — push to ghcr.io via the upstream release workflow and `gcloud run deploy` is the only command. Cloud Run does a zero-downtime traffic shift to the new revision.
 
 ### Logs
 
