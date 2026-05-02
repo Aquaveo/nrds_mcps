@@ -8,7 +8,8 @@ from fastmcp import FastMCP
 from datetime import datetime
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import Response
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 from .utils import (
     _get_json_raw,
     _prefer_id_objects,
@@ -26,6 +27,16 @@ from .validations import (
 
 mcp = FastMCP("NRDS MCP Server")
 LOGGER = logging.getLogger("nextgen_mcp.mcp_server")
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(_request: Request) -> JSONResponse:
+    """Liveness probe used by Docker HEALTHCHECK and container orchestrators.
+
+    Returns 200 with a minimal payload. Does not exercise downstream
+    dependencies (S3, etc.) — keep it cheap so polling stays free.
+    """
+    return JSONResponse({"status": "ok"})
 
 def _preview_text(value: Optional[str], limit: int = 200) -> Optional[str]:
     if value is None:
@@ -952,12 +963,19 @@ CORS_MIDDLEWARE = [
 ]
 
 
-if __name__ == "__main__":
+def main() -> None:
     _configure_runtime_logging()
-    LOGGER.info("Starting NRDS MCP Server on 0.0.0.0:9000 with SSE transport")
+    host = os.getenv("MCP_HOST", "0.0.0.0")
+    port = int(os.getenv("MCP_PORT", "9000"))
+    transport = os.getenv("MCP_TRANSPORT", "sse")
+    LOGGER.info("Starting NRDS MCP Server on %s:%d with %s transport", host, port, transport)
     mcp.run(
-        transport="sse",
-        host="0.0.0.0",
-        port=9000,
+        transport=transport,
+        host=host,
+        port=port,
         middleware=CORS_MIDDLEWARE,
     )
+
+
+if __name__ == "__main__":
+    main()
