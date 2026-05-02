@@ -1,0 +1,15 @@
+duckdb
+fastmcp
+fsspec
+h5netcdf
+numpy<2
+pandas
+plotly
+pyarrow
+pydantic
+requests
+s3fs
+shapely
+starlette
+typing_extensions
+xarray
