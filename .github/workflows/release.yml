@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to deploy (e.g., 0.1.0). Must already exist in ghcr.io.'
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -14,9 +20,18 @@ permissions:
   packages: write
   id-token: write
 
+# Serialize deploys so the latestCreatedRevisionName lookup is unambiguous.
+concurrency:
+  group: cloud-run-deploy-nrds-mcps
+  cancel-in-progress: false
+
 jobs:
   release:
+    # Build + push only runs on tag pushes; workflow_dispatch re-deploys an existing tag.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,3 +81,109 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+
+  deploy:
+    # Run after release on tag push, OR directly on workflow_dispatch.
+    needs: [release]
+    if: |
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && needs.release.result == 'success'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to GCP via WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/43707369422/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+          service_account: nrds-mcps-deployer@ibis-436806.iam.gserviceaccount.com
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Derive version (prefer workflow_dispatch input over ref)
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.tag }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not derive a non-empty version"; exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Derived version: $VERSION"
+
+      - name: Verify ghcr.io manifest is visible (eventual-consistency guard)
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/aquaveo/nrds-mcps:${{ steps.version.outputs.version }}"
+          for i in $(seq 1 12); do
+            if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+              echo "Manifest visible after ${i} attempts ($((i*5)) s)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::ghcr.io manifest not visible after 60 s for $IMAGE"
+          exit 1
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="us-central1-docker.pkg.dev/ibis-436806/nrds-mcps-remote/aquaveo/nrds-mcps:${{ steps.version.outputs.version }}"
+          DEPLOY_OUT=$(gcloud run deploy nrds-mcps \
+            --image="$IMAGE" \
+            --region=us-central1 \
+            --port=9000 \
+            --memory=2Gi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=2 \
+            --timeout=3600 \
+            --concurrency=80 \
+            --allow-unauthenticated \
+            --set-env-vars=MCP_PORT=9000,MCP_HOST=0.0.0.0,MCP_TRANSPORT=sse,NRDS_LOG_LEVEL=INFO,ALLOWED_ORIGINS='*' \
+            --startup-probe=httpGet.path=/health,httpGet.port=9000,initialDelaySeconds=10,timeoutSeconds=5,periodSeconds=5,failureThreshold=12 \
+            --format='value(status.url,status.latestCreatedRevisionName)')
+          URL=$(echo "$DEPLOY_OUT" | awk '{print $1}')
+          REVISION=$(echo "$DEPLOY_OUT" | awk '{print $2}')
+          if [ -z "$URL" ] || [ -z "$REVISION" ]; then
+            echo "::error::Deploy did not return URL+revision (got URL='$URL' REVISION='$REVISION')"
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          echo "Deployed revision $REVISION at $URL"
+
+      - name: Smoke /health on the new revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="${{ steps.deploy.outputs.url }}"
+          if [ -z "$URL" ]; then
+            echo "::error::No URL to probe"; exit 1
+          fi
+          for i in $(seq 1 24); do
+            if curl -fsS "$URL/health" > /dev/null; then
+              echo "Healthcheck passed after ${i} attempts ($((i*5)) s)"
+              echo "Note: /health=200 means the HTTP server is reachable."
+              echo "It does NOT prove every MCP tool initialized correctly — that"
+              echo "is a future probe. The Cloud Run startup probe configured on"
+              echo "this deploy does block traffic-shift until /health=200."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Healthcheck did not respond after 120 s"
+          gcloud run services logs read nrds-mcps --region=us-central1 --limit=50 || true
+          exit 1

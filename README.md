@@ -105,16 +105,42 @@ asyncio.run(smoke())
 "
 ```
 
-### Redeploy procedure (when a new image tag lands)
+### Redeploy procedure (automated)
+
+Push a `v*` git tag — `release.yml` builds, pushes to ghcr.io, and deploys to Cloud Run automatically:
 
 ```bash
-NEW_TAG=0.2.0  # replace with the actual release tag
+git tag -a v0.2.0 -m "..."
+git push origin v0.2.0
+```
+
+The workflow:
+1. Builds + pushes the multi-arch image to `ghcr.io/aquaveo/nrds-mcps:0.2.0` and `:latest`.
+2. Polls ghcr.io until the manifest is visible (eventual-consistency guard).
+3. Runs `gcloud run deploy` against `us-central1-docker.pkg.dev/ibis-436806/nrds-mcps-remote/aquaveo/nrds-mcps:0.2.0` (the AR remote repo proxies ghcr.io transparently).
+4. Cloud Run's startup probe on `/health` gates traffic-shift — a buggy revision is provisioned but never gets traffic.
+5. Workflow polls `/health` (120 s window) for forensic confirmation.
+
+If the deploy fails at any step, the previous revision keeps 100% traffic. **Failed deploys are non-destructive.**
+
+#### Re-deploy an existing tag
+
+Use the GitHub Actions UI: **Actions → Release → Run workflow**, supply the tag (e.g., `0.1.0`), click Run. The workflow skips the build job and goes straight to deploy + smoke.
+
+#### Manual fallback (CI broken / out-of-band hotfix)
+
+```bash
+TAG=0.2.0
 gcloud run deploy nrds-mcps \
-  --image="us-central1-docker.pkg.dev/ibis-436806/nrds-mcps-remote/aquaveo/nrds-mcps:$NEW_TAG" \
+  --image="us-central1-docker.pkg.dev/ibis-436806/nrds-mcps-remote/aquaveo/nrds-mcps:$TAG" \
   --region=us-central1
 ```
 
-Cloud Run pulls through the AR remote repo (`nrds-mcps-remote`), which transparently fetches the layer from `ghcr.io/aquaveo/nrds-mcps:$NEW_TAG` on first request and caches them locally. **No `docker pull` / `tag` / `push` step needed** — push to ghcr.io via the upstream release workflow and `gcloud run deploy` is the only command. Cloud Run does a zero-downtime traffic shift to the new revision.
+**When NOT to "just push the tag":** if the new release also requires Cloud Run config changes (env vars, runtime SA, IAM roles, ingress settings), the YAML's hard-coded flags will only deploy what's listed. Coordinate config and code together — either update the workflow YAML in the same PR as the code change, or do a manual `gcloud run services update` after.
+
+#### Service config lives in the workflow YAML
+
+`release.yml`'s deploy step explicitly passes all Cloud Run flags (memory, cpu, instances, env vars, ingress). **Console edits will be silently reset on the next CI deploy.** If you need to adjust config, update `.github/workflows/release.yml`, not the console.
 
 ### Logs
 

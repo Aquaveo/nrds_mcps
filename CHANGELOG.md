@@ -9,6 +9,23 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Tag-driven Cloud Run auto-redeploy. `release.yml` extended with a
+  `deploy` job that authenticates to GCP via Workload Identity Federation
+  (no JSON key), runs `gcloud run deploy` against the AR remote-repo image,
+  and smokes `/health` before reporting success. The deploy command also
+  configures a Cloud Run startup probe on `/health` so failed revisions
+  never receive traffic. `workflow_dispatch` trigger added with a required
+  `tag` input for re-deploying an existing tag from the Actions UI.
+
+### Changed
+
+- Release workflow gains a `concurrency:` group (`cloud-run-deploy-nrds-mcps`)
+  that serializes deploys; parallel tag pushes wait their turn rather than
+  racing. Build job (`release`) only runs on `push: tags: 'v*'`; manual
+  re-deploys via `workflow_dispatch` skip build and go straight to deploy.
+
+
+
 - Public test deployment on Google Cloud Run at
   `https://nrds-mcps-43707369422.us-central1.run.app` (project `ibis-436806`,
   region `us-central1`). Image served via Artifact Registry **remote
