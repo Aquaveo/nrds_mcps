@@ -7,6 +7,16 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Public test deployment on Google Cloud Run at
+  `https://nrds-mcps-43707369422.us-central1.run.app` (project `ibis-436806`,
+  region `us-central1`). Image mirrored from `ghcr.io/aquaveo/nrds-mcps:0.1.0`
+  to `us-central1-docker.pkg.dev/ibis-436806/nrds-mcps/nrds-mcps:0.1.0`
+  (Cloud Run does not pull from ghcr.io directly). Public unauthenticated
+  ingress; no AWS credentials needed (NRDS S3 bucket is public). See README's
+  "Test Deployment" section for redeploy procedure and tool-call examples.
+
 ## [0.1.0] — 2026-05-02
 
 First deployable container image.
