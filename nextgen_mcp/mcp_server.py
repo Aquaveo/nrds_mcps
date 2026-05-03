@@ -987,7 +987,7 @@ def main() -> None:
     _configure_runtime_logging()
     host = os.getenv("MCP_HOST", "0.0.0.0")
     port = int(os.getenv("MCP_PORT", "9000"))
-    transport = os.getenv("MCP_TRANSPORT", "sse")
+    transport = os.getenv("MCP_TRANSPORT", "streamable-http")
     LOGGER.info("Starting NRDS MCP Server on %s:%d with %s transport", host, port, transport)
     mcp.run(
         transport=transport,

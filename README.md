@@ -25,7 +25,7 @@ curl -fsS http://localhost:9000/health
 # {"status":"ok"}
 ```
 
-Connect an MCP client to `http://<host>:9000/sse`.
+Connect an MCP client to `http://<host>:9000/mcp` (Streamable HTTP transport, default since v0.1.1; legacy SSE clients should use `MCP_TRANSPORT=sse` and connect to `/sse` instead).
 
 ## Image Tags
 
@@ -40,9 +40,9 @@ Multi-arch: `linux/amd64`, `linux/arm64`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `MCP_PORT` | `9000` | Port the SSE server listens on. The container exposes 9000; map elsewhere on the host with `-p HOST:9000`. |
+| `MCP_PORT` | `9000` | Port the server listens on. The container exposes 9000; map elsewhere on the host with `-p HOST:9000`. |
 | `MCP_HOST` | `0.0.0.0` | Bind address inside the container. Rarely overridden. |
-| `MCP_TRANSPORT` | `sse` | FastMCP transport. Stick with `sse` unless your client requires something else. |
+| `MCP_TRANSPORT` | `streamable-http` | FastMCP transport. Default `streamable-http` (path `/mcp`). Set to `sse` (path `/sse`) for legacy clients. |
 | `NRDS_LOG_LEVEL` | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 | `ALLOWED_ORIGINS` | `*` | CORS allow-list, comma-separated. Set explicitly for production deployments behind a known origin. |
 | `AWS_ACCESS_KEY_ID` | — | AWS credentials for S3 access. Inject at runtime; do not bake into the image. |
@@ -59,10 +59,11 @@ The container exposes `GET /health` returning `200 {"status":"ok"}`. The Docker 
 
 | Path | Method | Purpose |
 |---|---|---|
-| `/sse` | GET | MCP SSE transport endpoint. Connect MCP clients here. |
+| `/mcp` | GET, POST | MCP Streamable HTTP transport endpoint (default since v0.1.1). Connect MCP clients here. |
+| `/sse` | GET | MCP SSE transport endpoint (only when `MCP_TRANSPORT=sse`). |
 | `/health` | GET | Liveness probe. |
 
-The MCP tool surface (e.g., `list_available_models`, `query_outputs`, `create_chart`) is discovered automatically by MCP clients via SSE; consult the source for the full list.
+The MCP tool surface (e.g., `list_available_models`, `query_outputs`, `create_chart`) is discovered automatically by MCP clients; consult the source for the full list.
 
 ## Test Deployment (Google Cloud Run)
 
@@ -72,7 +73,7 @@ A public test instance runs on Google Cloud Run, free tier:
 |---|---|
 | **URL** | https://nrds-mcps-43707369422.us-central1.run.app |
 | **Health** | `GET /health` → `{"status":"ok"}` |
-| **MCP SSE** | `GET /sse` |
+| **MCP endpoint** | `GET, POST /mcp` (Streamable HTTP, default since v0.1.1). The legacy `/sse` returns 404. |
 | **Auth** | None (`--allow-unauthenticated`) |
 | **GCP project** | `ibis-436806` |
 | **Region** | `us-central1` |
@@ -86,17 +87,20 @@ URL=https://nrds-mcps-43707369422.us-central1.run.app
 # Healthcheck
 curl -fsS "$URL/health"          # → {"status":"ok"}
 
-# MCP SSE handshake
-curl -sN --max-time 5 -H "Accept: text/event-stream" "$URL/sse"
-# → event: endpoint
-#   data: /messages/?session_id=<uuid>
+# MCP initialize (Streamable HTTP transport)
+curl -isS -X POST "$URL/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}' \
+  | head -20
+# → 200 OK + mcp-session-id header + JSON-RPC initialize response
 
 # Full MCP smoke from Python (requires fastmcp installed)
 python -c "
 import asyncio
 from fastmcp import Client
 async def smoke():
-    async with Client('$URL/sse') as c:
+    async with Client('$URL/mcp') as c:
         tools = await c.list_tools()
         print(f'tools: {len(tools)}')
         result = await c.call_tool('list_available_models', {})
@@ -104,6 +108,8 @@ async def smoke():
 asyncio.run(smoke())
 "
 ```
+
+**Migration note (v0.1.0 → v0.1.1):** the legacy `/sse` URL returns 404 starting v0.1.1. Clients with hardcoded `/sse` URLs (e.g., tethysdash's saved MCP server config) must update to `/mcp`. chatbox-core's `pickTransport()` auto-detects from the URL suffix, so consumers only need to change the URL string.
 
 ### Redeploy procedure (automated)
 

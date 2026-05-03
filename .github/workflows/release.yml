@@ -152,7 +152,7 @@ jobs:
             --timeout=3600 \
             --concurrency=80 \
             --allow-unauthenticated \
-            --set-env-vars=MCP_PORT=9000,MCP_HOST=0.0.0.0,MCP_TRANSPORT=sse,NRDS_LOG_LEVEL=INFO,ALLOWED_ORIGINS='*' \
+            --set-env-vars=MCP_PORT=9000,MCP_HOST=0.0.0.0,MCP_TRANSPORT=streamable-http,NRDS_LOG_LEVEL=INFO,ALLOWED_ORIGINS='*' \
             --startup-probe=httpGet.path=/health,httpGet.port=9000,initialDelaySeconds=10,timeoutSeconds=5,periodSeconds=5,failureThreshold=12 \
             --format='value(status.url,status.latestCreatedRevisionName)')
           URL=$(echo "$DEPLOY_OUT" | awk '{print $1}')
@@ -208,7 +208,7 @@ jobs:
           import asyncio, os, sys
           from fastmcp import Client
 
-          URL = os.environ["URL"] + "/sse"
+          URL = os.environ["URL"] + "/mcp"
           EXPECTED = int(os.environ["EXPECTED_MIN_TOOLS"])
 
           async def smoke():
