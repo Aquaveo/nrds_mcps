@@ -912,12 +912,26 @@ def create_plotly_chart_from_output_selector_tool(
         result)
     return result
 
-ALLOWED_ORIGINS = [
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
+def _parse_allowed_origins() -> List[str]:
+    """Read ALLOWED_ORIGINS from env (comma-separated). Defaults to wildcard.
+
+    Production deployments behind a known origin (tethysdash, an MCP playground,
+    a custom client) should set this explicitly via the deploy YAML's
+    --set-env-vars=ALLOWED_ORIGINS=https://example.com[,https://other.com] to
+    tighten the surface. The wildcard default matches the test deployment's
+    "no auth, public ingress" posture.
+    """
+    raw = os.getenv("ALLOWED_ORIGINS", "*").strip()
+    if not raw or raw == "*":
+        return ["*"]
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+ALLOWED_ORIGINS = _parse_allowed_origins()
+# CORS spec forbids `allow_credentials=True` together with `allow_origins=["*"]`.
+# We don't use cookies/Authorization in this MCP server (the SSE endpoint is
+# public unauthenticated by design), so drop credentials to allow the wildcard.
+ALLOW_CREDENTIALS = ALLOWED_ORIGINS != ["*"]
 
 
 def _patch_sse_transport_for_cors():
@@ -935,13 +949,19 @@ def _patch_sse_transport_for_cors():
     async def patched_handle(self, scope, receive, send):
         if scope.get("method") == "OPTIONS":
             origin = dict(scope.get("headers", [])).get(b"origin", b"").decode()
+            if ALLOWED_ORIGINS == ["*"]:
+                allow_origin = "*"
+            else:
+                allow_origin = origin if origin in ALLOWED_ORIGINS else ""
             headers = {
-                "access-control-allow-origin": origin if origin in ALLOWED_ORIGINS else "*",
                 "access-control-allow-methods": "GET, POST, OPTIONS",
                 "access-control-allow-headers": "content-type, x-csrftoken, authorization",
-                "access-control-allow-credentials": "true",
                 "access-control-max-age": "86400",
             }
+            if allow_origin:
+                headers["access-control-allow-origin"] = allow_origin
+            if ALLOW_CREDENTIALS and allow_origin and allow_origin != "*":
+                headers["access-control-allow-credentials"] = "true"
             response = Response(status_code=200, headers=headers)
             await response(scope, receive, send)
             return
@@ -956,7 +976,7 @@ CORS_MIDDLEWARE = [
     Middleware(
         CORSMiddleware,
         allow_origins=ALLOWED_ORIGINS,
-        allow_credentials=True,
+        allow_credentials=ALLOW_CREDENTIALS,
         allow_methods=["*"],
         allow_headers=["*"],
     ),
