@@ -176,10 +176,6 @@ jobs:
           for i in $(seq 1 24); do
             if curl -fsS "$URL/health" > /dev/null; then
               echo "Healthcheck passed after ${i} attempts ($((i*5)) s)"
-              echo "Note: /health=200 means the HTTP server is reachable."
-              echo "It does NOT prove every MCP tool initialized correctly — that"
-              echo "is a future probe. The Cloud Run startup probe configured on"
-              echo "this deploy does block traffic-shift until /health=200."
               exit 0
             fi
             sleep 5
@@ -187,3 +183,54 @@ jobs:
           echo "::error::Healthcheck did not respond after 120 s"
           gcloud run services logs read nrds-mcps --region=us-central1 --limit=50 || true
           exit 1
+
+      # Stronger gate than /health=200: actually speak MCP-protocol over SSE and
+      # verify tools/list returns the expected set. Catches tool-init crashes
+      # that leave the HTTP server alive but the tool registry empty/short.
+      - name: Setup Python for MCP probe
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install fastmcp client
+        # Pin to match server's nextgen_mcp/requirements.lock. Bump in lockstep
+        # when the server upgrades fastmcp.
+        run: pip install 'fastmcp==3.2.4'
+
+      - name: MCP smoke — list tools and assert count
+        shell: bash
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          EXPECTED_MIN_TOOLS: '13'
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import asyncio, os, sys
+          from fastmcp import Client
+
+          URL = os.environ["URL"] + "/sse"
+          EXPECTED = int(os.environ["EXPECTED_MIN_TOOLS"])
+
+          async def smoke():
+              async with Client(URL) as c:
+                  tools = await c.list_tools()
+                  return [t.name for t in tools]
+
+          try:
+              names = asyncio.run(asyncio.wait_for(smoke(), timeout=30))
+          except asyncio.TimeoutError:
+              print("::error::MCP smoke timed out after 30 s")
+              sys.exit(1)
+
+          count = len(names)
+          print(f"tools/list returned {count} tools")
+          for name in names[:5]:
+              print(f"  - {name}")
+
+          if count < EXPECTED:
+              print(
+                  f"::error::tools/list returned {count} tools, "
+                  f"expected at least {EXPECTED}"
+              )
+              sys.exit(1)
+          PY

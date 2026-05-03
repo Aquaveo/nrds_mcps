@@ -23,6 +23,12 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that serializes deploys; parallel tag pushes wait their turn rather than
   racing. Build job (`release`) only runs on `push: tags: 'v*'`; manual
   re-deploys via `workflow_dispatch` skip build and go straight to deploy.
+- Deploy job's smoke gate strengthened: after the existing `/health`
+  poll, the workflow now probes MCP `tools/list` via FastMCP client
+  (pinned to `fastmcp==3.2.4`) and fails the workflow if fewer than 13
+  tools are registered. Catches tool-init crashes that leave `/health`
+  green but the MCP tool registry broken. Threshold (`EXPECTED_MIN_TOOLS=13`)
+  is inline in `release.yml`; bump explicitly when adding/removing tools.
 
 
 
