@@ -7,6 +7,28 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed (BREAKING — URL path)
+
+- **Default transport switched from SSE to Streamable HTTP.** The MCP
+  endpoint moves from `/sse` to `/mcp` (FastMCP default for streamable-http).
+  The legacy `/sse` URL returns 404 in default config.
+- **Migration:** clients with hardcoded `…/sse` URLs (e.g., tethysdash's
+  saved MCP server config) must update to `…/mcp`. chatbox-core's
+  `pickTransport()` auto-detects from the URL suffix, so only the URL
+  string changes — no code change in consumers.
+- To run the legacy SSE transport, set `MCP_TRANSPORT=sse` env var; the
+  server will revert to `/sse` and the legacy `event: endpoint` flow.
+
+### Fixed
+
+- `ALLOWED_ORIGINS` is now read from the env var (was previously a
+  hardcoded localhost-only Python list, ignoring the deploy command's
+  `--set-env-vars=ALLOWED_ORIGINS=*`). Browser-based MCP clients
+  (MCP Playground, hosted MCP Inspectors) at non-localhost origins
+  now succeed CORS preflight against the deployed server. The
+  `ALLOW_CREDENTIALS` flag auto-derives: `False` when `ALLOWED_ORIGINS=["*"]`
+  (CORS spec forbids the combination), `True` when origins are explicit.
+
 ### Added
 
 - Tag-driven Cloud Run auto-redeploy. `release.yml` extended with a

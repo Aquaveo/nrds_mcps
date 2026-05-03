@@ -32,7 +32,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH=/venv/bin:$PATH \
     MCP_HOST=0.0.0.0 \
     MCP_PORT=9000 \
-    MCP_TRANSPORT=sse
+    MCP_TRANSPORT=streamable-http
 
 # wget for HEALTHCHECK; ca-certificates for HTTPS to S3 etc.
 RUN apt-get update && apt-get install -y --no-install-recommends \
