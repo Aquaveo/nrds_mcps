@@ -48,6 +48,15 @@ COPY --chown=mcp:mcp nextgen_mcp/ ./nextgen_mcp/
 
 USER mcp
 
+# Cloud Run's container filesystem is read-only except /tmp. DuckDB writes
+# its extension cache to ~/.duckdb/extensions/ on first use of httpfs (or
+# any extension), so the user's HOME must be writable. /app — the WORKDIR —
+# is owned by root and not writable by the mcp user; pointing HOME at /tmp
+# (Cloud Run's tmpfs) lets DuckDB create /tmp/.duckdb/extensions/ on demand.
+# Extensions get re-downloaded on cold start, which is bounded (~5 MB for
+# httpfs); pre-baking is a future optimization.
+ENV HOME=/tmp
+
 EXPOSE 9000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

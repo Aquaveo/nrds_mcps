@@ -234,3 +234,61 @@ jobs:
               )
               sys.exit(1)
           PY
+
+      # DuckDB extension cache lives under HOME (~/.duckdb/extensions/) — Cloud
+      # Run's container filesystem is read-only except /tmp, so an unwritable
+      # HOME causes "Permission denied: /app/.duckdb" on the first httpfs load
+      # and crashes every chart/query tool. Calling one DuckDB-using tool with
+      # a deliberately-fake S3 URL forces the httpfs extension to load (which
+      # triggers the directory creation) before the bucket-not-found error
+      # fires. We assert the error returned does NOT mention the read-only-fs
+      # path. A pass means HOME is writable; a fail surfaces the regression at
+      # deploy time instead of in the field.
+      - name: MCP smoke — DuckDB extension load (read-only-fs guard)
+        shell: bash
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import asyncio, os, sys
+          from fastmcp import Client
+
+          URL = os.environ["URL"] + "/mcp"
+          # Deliberate non-existent bucket — DuckDB still loads httpfs to
+          # attempt the request, which is what triggers the bug if HOME is
+          # not writable.
+          FAKE_S3 = "s3://nrds-mcps-smoke-nonexistent/x.parquet"
+
+          async def smoke():
+              async with Client(URL) as c:
+                  return await c.call_tool(
+                      "query_output_file",
+                      {"file_url": FAKE_S3, "query": "SELECT 1"},
+                  )
+
+          try:
+              result = asyncio.run(asyncio.wait_for(smoke(), timeout=30))
+          except asyncio.TimeoutError:
+              print("::error::DuckDB smoke timed out after 30 s")
+              sys.exit(1)
+
+          # fastmcp returns either a result or a structured error; serialize
+          # everything we can read so we can assert against the error text.
+          payload = repr(result)
+          print(f"smoke result (first 500 chars): {payload[:500]}")
+
+          # The bug signature: "/app/.duckdb" or "Permission denied" while
+          # creating the extension dir. Either string in the response means
+          # the read-only-fs gap regressed.
+          BAD_MARKERS = ("/app/.duckdb", "Permission denied")
+          for marker in BAD_MARKERS:
+              if marker in payload:
+                  print(
+                      f"::error::DuckDB extension load failed on read-only "
+                      f"filesystem (saw {marker!r} in tool response). "
+                      f"Check Dockerfile ENV HOME=/tmp."
+                  )
+                  sys.exit(1)
+          print("DuckDB smoke passed — extension load OK on read-only fs")
+          PY
