@@ -253,30 +253,51 @@ jobs:
           python <<'PY'
           import asyncio, os, sys
           from fastmcp import Client
+          from fastmcp.exceptions import ToolError
 
           URL = os.environ["URL"] + "/mcp"
           # Deliberate non-existent bucket — DuckDB still loads httpfs to
           # attempt the request, which is what triggers the bug if HOME is
-          # not writable.
+          # not writable. URL must satisfy query_output_file's regex
+          # (^(?:https://|s3://).+\.(?:parquet|nc|nc4)$).
           FAKE_S3 = "s3://nrds-mcps-smoke-nonexistent/x.parquet"
 
           async def smoke():
               async with Client(URL) as c:
                   return await c.call_tool(
                       "query_output_file",
-                      {"file_url": FAKE_S3, "query": "SELECT 1"},
+                      {"s3_url": FAKE_S3, "query": "SELECT 1"},
                   )
 
+          # The tool can either return a result with embedded error text
+          # OR raise ToolError. Capture both into a single payload string.
           try:
               result = asyncio.run(asyncio.wait_for(smoke(), timeout=30))
+              payload = repr(result)
           except asyncio.TimeoutError:
               print("::error::DuckDB smoke timed out after 30 s")
               sys.exit(1)
+          except ToolError as e:
+              payload = f"ToolError: {e}"
+          except Exception as e:
+              payload = f"{type(e).__name__}: {e}"
 
-          # fastmcp returns either a result or a structured error; serialize
-          # everything we can read so we can assert against the error text.
-          payload = repr(result)
-          print(f"smoke result (first 500 chars): {payload[:500]}")
+          print(f"smoke result (first 1000 chars): {payload[:1000]}")
+
+          # Schema-failure guard: if the smoke fails on arg validation, it
+          # never reached DuckDB and the read-only-fs check is a no-op. Fail
+          # loudly so a future tool-signature change doesn't silently break
+          # this gate.
+          schema_markers = (
+              "validation error", "Missing required argument",
+              "Unexpected keyword argument", "missing_argument",
+          )
+          if any(m.lower() in payload.lower() for m in schema_markers):
+              print(
+                  "::error::Smoke failed at schema validation, before reaching "
+                  "DuckDB. Fix the smoke step's tool arg names."
+              )
+              sys.exit(1)
 
           # The bug signature: "/app/.duckdb" or "Permission denied" while
           # creating the extension dir. Either string in the response means
