@@ -197,11 +197,13 @@ jobs:
         # when the server upgrades fastmcp.
         run: pip install 'fastmcp==3.2.4'
 
-      - name: MCP smoke — list tools and assert count
+      - name: MCP smoke — list tools and assert surface
         shell: bash
         env:
           URL: ${{ steps.deploy.outputs.url }}
-          EXPECTED_MIN_TOOLS: '13'
+          # Defensive lower bound; the load-bearing assertions below are
+          # the explicit name-absence and name-presence checks.
+          EXPECTED_MIN_TOOLS: '11'
         run: |
           set -euo pipefail
           python <<'PY'
@@ -210,6 +212,22 @@ jobs:
 
           URL = os.environ["URL"] + "/mcp"
           EXPECTED = int(os.environ["EXPECTED_MIN_TOOLS"])
+
+          # Names that must NOT exist on the deployed server. Listed
+          # explicitly because a min-count check alone is a silent
+          # false negative — re-introducing a deleted tool would still
+          # satisfy `count >= EXPECTED` and let the regression ship.
+          REMOVED = (
+              "create_plotly_chart_from_output_selector",
+              "create_plotly_chart_from_parquet_output_file",
+              "build_hydrofabric_feature_map_config",
+          )
+
+          # Names that must exist (renamed-and-reshaped surface from
+          # the data-only cleanup in v0.2.0).
+          REQUIRED = (
+              "lookup_hydrofabric_feature",
+          )
 
           async def smoke():
               async with Client(URL) as c:
@@ -222,16 +240,40 @@ jobs:
               print("::error::MCP smoke timed out after 30 s")
               sys.exit(1)
 
+          name_set = set(names)
           count = len(names)
           print(f"tools/list returned {count} tools")
-          for name in names[:5]:
+          for name in sorted(names):
               print(f"  - {name}")
+
+          failed = False
+
+          present_but_should_not_be = [n for n in REMOVED if n in name_set]
+          if present_but_should_not_be:
+              for n in present_but_should_not_be:
+                  print(
+                      f"::error::Removed tool still present in tools/list: {n}. "
+                      "v0.2.0 deleted this surface; re-introducing it requires "
+                      "updating CHANGELOG and this smoke gate together."
+                  )
+              failed = True
+
+          missing_but_required = [n for n in REQUIRED if n not in name_set]
+          if missing_but_required:
+              for n in missing_but_required:
+                  print(
+                      f"::error::Required tool missing from tools/list: {n}"
+                  )
+              failed = True
 
           if count < EXPECTED:
               print(
                   f"::error::tools/list returned {count} tools, "
                   f"expected at least {EXPECTED}"
               )
+              failed = True
+
+          if failed:
               sys.exit(1)
           PY
 
