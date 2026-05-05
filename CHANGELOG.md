@@ -7,7 +7,65 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed (BREAKING — URL path)
+## [0.2.0] — 2026-05-04
+
+### Removed (BREAKING — tool surface)
+
+- **`create_plotly_chart_from_output_selector` is removed.** Use
+  `query_output_file_from_output_selector` to fetch rows, then call
+  the host's chart-creation tool (e.g., `create_plotly_chart` on
+  tethysdash) with the rows as inline data.
+- **`create_plotly_chart_from_parquet_output_file` is removed.** Use
+  `query_output_file` (or `query_output_file_from_output_selector`)
+  for the data, then chain into the host's chart-creation tool.
+- **`build_hydrofabric_feature_map_config` is renamed and reshaped
+  to `lookup_hydrofabric_feature`.** New return shape is data-only:
+  `{rows, pmtiles_layer, bbox}` (or `{rows: [], pmtiles_layer: null,
+  bbox: null}` on empty match). The host is responsible for any
+  map rendering or visualization assembled from this data.
+
+### Why
+
+Renderable payloads (Plotly figure JSON, map-config blobs) returned
+by an MCP server require the consuming host to know that server's
+specific render contract. Returning `{figure: {...}}` or
+`{highlight: {...}, camera: {...}}` from this server made the host
+either reach into engine internals to dispatch the payload as a
+grid item or silently drop it on the floor. Real-world result:
+charts succeeded server-side but never reached the dashboard, and
+the LLM, with no signal of dispatch failure, told the user the
+chart had been generated.
+
+After this release, NRDS MCP returns data only. Any host pairing
+with this server owns its own rendering envelopes. See the
+chatbox-core `_engine_dispatched` contract (0.3.0) for in-band
+dispatch feedback that backs this separation.
+
+### Migration
+
+Replace single-step calls with two-step chains:
+
+| Before (single tool) | After (data + host render) |
+|---|---|
+| `create_plotly_chart_from_output_selector(...)` | `query_output_file_from_output_selector(...)` → host chart tool |
+| `create_plotly_chart_from_parquet_output_file(...)` | `query_output_file(...)` → host chart tool |
+| `build_hydrofabric_feature_map_config(...)` | `lookup_hydrofabric_feature(...)` → host map tool |
+
+The remaining 11 tools (lists, resolvers, queries) are unchanged.
+
+### Internal cleanup
+
+- `nextgen_mcp/rest.py` — chart helpers
+  (`create_plotly_chart_from_output_file`,
+  `create_plotly_chart_from_parquet_output_file`) deleted.
+  `build_hydrofabric_feature_map_config` replaced with the data-only
+  `lookup_hydrofabric_feature` (uses new `_bbox_from_row` helper plus
+  the existing `_duckdb_lookup_hydrofabric_feature`,
+  `_normalize_record`, `_get_feature_center` from `utils_rest.py`).
+- `nextgen_mcp/utils.py` — corresponding imports + dispatch entries
+  removed; new dispatch entry for `lookup_hydrofabric_feature` added.
+
+### Changed (BREAKING — URL path, carried over from prior unreleased)
 
 - **Default transport switched from SSE to Streamable HTTP.** The MCP
   endpoint moves from `/sse` to `/mcp` (FastMCP default for streamable-http).

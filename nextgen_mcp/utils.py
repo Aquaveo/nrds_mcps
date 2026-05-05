@@ -16,10 +16,8 @@ from .rest import (
     get_output_file,
     query_output_file,
     query_output_file_from_output_selector,
-    create_plotly_chart_from_output_selector,
     query_hydrofabric_parquet_file,
-    build_hydrofabric_feature_map_config,
-    create_plotly_chart_from_output_file,
+    lookup_hydrofabric_feature,
 )
 
 REST_API_HOST = os.getenv("NRDS_API_HOST", "http://localhost:8000/apps/nrds/api").rstrip("/")
@@ -76,30 +74,9 @@ def _get_json_raw(endpoint_key: str, params: Optional[Dict[str, Any]] = None, **
             limit=p["limit"]
         )
     
-    if endpoint_key == "create_plotly_chart_from_output_file":
-        return create_plotly_chart_from_output_file(
-            s3_url=p["s3_url"],
-            query=p["query"],
-            title=p.get("title"),
-        )
-    
-    if endpoint_key == "build_hydrofabric_feature_map_config":
-        return build_hydrofabric_feature_map_config(
-            hydrofabric_id=p["hydrofabric_id"], 
-        )
-    
-    if endpoint_key == "create_plotly_chart_from_output_selector":
-        return create_plotly_chart_from_output_selector(
-            model=p["model"],
-            date=p["date"],
-            forecast=p["forecast"],
-            cycle=p["cycle"],
-            vpu=p["vpu"],
-            query=p["query"],
-            title=p.get("title"),
-            ensemble=p.get("ensemble"),
-            file_name=p.get("file_name"),
-            index=p.get("index"),
+    if endpoint_key == "lookup_hydrofabric_feature":
+        return lookup_hydrofabric_feature(
+            hydrofabric_id=p["hydrofabric_id"],
         )
 
     raise KeyError(f"Unknown endpoint_key: {endpoint_key}")
