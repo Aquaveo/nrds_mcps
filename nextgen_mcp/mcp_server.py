@@ -665,59 +665,6 @@ def query_output_file_tool(
     return result
 
 @mcp.tool(
-    name="create_plotly_chart_from_parquet_output_file",
-    description=(
-        "Create a Plotly-compatible line chart JSON from ONE parquet output file in S3. "
-        "The file is exposed as table `output` with schema: "
-        "(time TIMESTAMP_NS, feature_id BIGINT, type VARCHAR, flow FLOAT, velocity FLOAT, depth FLOAT, nudge FLOAT). "
-        "Query must be a single read-only SELECT or WITH...SELECT statement, must read FROM output, "
-        "and should return `time` plus at least one metric column such as flow, velocity, depth, or nudge."
-    ),
-)
-def create_plotly_chart_from_parquet_output_file_tool(
-    s3_url: Annotated[
-        str,
-        Field(
-            description="Full URL to ONE parquet file (s3://... or https://...)",
-            pattern=r"^(?:https://|s3://).+\.parquet$",
-        ),
-    ],
-    query: Annotated[
-        str,
-        Field(
-            description=(
-                "DuckDB SQL query against table `output`. "
-                "Single read-only SELECT or WITH...SELECT statement only. Must read FROM output. "
-                "Chart queries should return `time` and one metric column such as flow, velocity, depth, or nudge."
-            ),
-            pattern=r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b).*$",
-        ),
-    ] = None,
-    title: Annotated[
-        Optional[str],
-        Field(description="Optional chart title."),
-    ] = None
-) -> Dict[str, Any]:
-    LOGGER.info(
-        "Tool create_plotly_chart_from_parquet_output_file called s3_url=%s title=%s query_preview=%s",
-        s3_url,
-        title,
-        _preview_text(query),
-    )
-    result = _get_json_raw("create_plotly_chart_from_parquet_output_file", params={
-        "s3_url": s3_url,
-        "query": query,
-        "title": title,
-    })
-    LOGGER.info(
-        "Tool create_plotly_chart_from_parquet_output_file completed s3_url=%s title=%s",
-        s3_url,
-        title,
-    )
-    return result
-
-
-@mcp.tool(
     name="query_hydrofabric_parquet_file",
     description=(
         "Lookup rows in the hydrofabric index parquet file in S3 by hydrofabric identifier. "
@@ -760,157 +707,35 @@ def query_hydrofabric_parquet_file(
 
 
 @mcp.tool(
-    name="build_hydrofabric_feature_map_config",
+    name="lookup_hydrofabric_feature",
     description=(
-        "Build a map configuration for a hydrofabric feature lookup by id. "
-        "Looks up the hydrofabric index parquet file, determines the correct PMTiles layer, "
-        "returns highlight/filter metadata and a fallback camera position. "
-        "Use this when the user wants to show, highlight, zoom to, or locate a hydrofabric feature on a map."
+        "Look up a hydrofabric feature by identifier and return data only. "
+        "Returns matching rows from the hydrofabric index, the associated PMTiles "
+        "layer name, and a bounding box for the feature. Returns an empty result "
+        "(no rows, null layer, null bbox) when nothing matches. "
+        "The host is responsible for any map rendering or visualization built from this data."
     ),
 )
-def build_hydrofabric_feature_map_config(
+def lookup_hydrofabric_feature(
     hydrofabric_id: Annotated[
         str,
         Field(description="Hydrofabric identifier to search in columns id and divide_id.")
     ]
 ) -> Dict[str, Any]:
     LOGGER.info(
-        "Tool build_hydrofabric_feature_map_config called hydrofabric_id=%s",
+        "Tool lookup_hydrofabric_feature called hydrofabric_id=%s",
         hydrofabric_id,
     )
     result = _get_json_raw(
-        "build_hydrofabric_feature_map_config",
+        "lookup_hydrofabric_feature",
         params={"hydrofabric_id": hydrofabric_id},
     )
     LOGGER.info(
-        "Tool build_hydrofabric_feature_map_config completed hydrofabric_id=%s",
+        "Tool lookup_hydrofabric_feature completed hydrofabric_id=%s",
         hydrofabric_id,
     )
     return result
 
-@mcp.tool(
-    name="create_plotly_chart_from_output_selector",
-    description=(
-        "Resolve one NRDS output file from model/date/forecast/cycle/vpu and create a "
-        "Plotly-compatible line chart JSON in one step. "
-        "Supports parquet (.parquet) and netcdf (.nc, .nc4). "
-        "Use this for chart requests when you know model/date/forecast/cycle/vpu instead of a direct s3_url. "
-        "If file_name is provided it is used; otherwise index is used and defaults to 0 (the first sorted output file). "
-        "The selected file may be parquet or netcdf. "
-        "The SQL query must be a single read-only SELECT or WITH...SELECT statement, must read FROM output, "
-        "and should return `time` plus at least one metric column such as flow, velocity, depth, or nudge."
-    ),
-)
-def create_plotly_chart_from_output_selector_tool(
-    model: Annotated[MODELS, Field(description="Model id — call list_available_models to discover valid values")] = None,
-    date: Annotated[
-        Optional[str],
-        Field(description="YYYY-MM-DD or YYYY/MM/DD", pattern=DATE_PATTERN),
-    ] = None,
-    forecast: Annotated[FORECASTS, Field(description="Forecast id — call list_available_forecasts to discover valid values")] = None,
-    cycle: Annotated[
-        str,
-        Field(
-            description="Cycle (00-23)",
-            pattern=r"^(?:[01]\d|2[0-3])$",
-        ),
-    ] = "00",
-    vpu: Annotated[
-        str,
-        Field(
-            description="VPU identifier — call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
-        ),
-    ] = None,
-    query: Annotated[
-        str,
-        Field(
-            description=(
-                "DuckDB SQL query against table `output`. "
-                "Single read-only SELECT or WITH...SELECT statement only. Must read FROM output. "
-                "Chart queries should return `time` and one metric column such as flow, velocity, depth, or nudge."
-            ),
-            pattern=r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b).*$",
-        ),
-    ] = None,
-    title: Annotated[
-        Optional[str],
-        Field(description="Optional chart title."),
-    ] = None,
-    ensemble: Annotated[
-        Optional[str],
-        Field(description="Optional ensemble member for medium_range.", pattern=r"^\d+$"),
-    ] = None,
-    file_name: Annotated[
-        Optional[str],
-        Field(
-            description=(
-                "Exact parquet filename to chart. If provided, it is used and index is ignored."
-            )
-        ),
-    ] = None,
-    index: Annotated[
-        Optional[int],
-        Field(
-            description=(
-                "0-based index into the sorted output file list. "
-                "Used only when file_name is not provided. Defaults to 0 (first file)."
-            ),
-            ge=0,
-        ),
-    ] = 0,
-) -> Dict[str, Any]:
-    err = _require(model=model, forecast=forecast, vpu=vpu, query=query)
-    if err:
-        return err
-    LOGGER.info(
-        "Tool create_plotly_chart_from_output_selector called model=%s date=%s forecast=%s cycle=%s "
-        "vpu=%s ensemble=%s file_name=%s index=%s title=%s query_preview=%s",
-        model,
-        date,
-        _as_id(forecast),
-        cycle,
-        _as_id(vpu),
-        ensemble,
-        file_name,
-        index,
-        title,
-        _preview_text(query),
-    )
-
-    end_date = _parse_date_or_today(date, "date")
-    params: Dict[str, Any] = {
-        "model": model,
-        "date": end_date.isoformat(),
-        "forecast": _as_id(forecast),
-        "cycle": cycle,
-        "vpu": _as_id(vpu),
-        "query": query,
-    }
-
-    if title is not None:
-        params["title"] = title
-    if ensemble is not None:
-        params["ensemble"] = ensemble
-
-    if file_name is not None:
-        params["file_name"] = file_name
-    else:
-        params["index"] = 0 if index is None else index
-
-    result = _get_json_raw("create_plotly_chart_from_output_selector", params=params)
-
-    LOGGER.info(
-        "Tool create_plotly_chart_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s",
-        model,
-        end_date.isoformat(),
-        params["forecast"],
-        cycle,
-        params["vpu"],
-    )
-    LOGGER.info(
-        "create_plotly_chart_from_output_selector result: %s",
-        result)
-    return result
 
 def _parse_allowed_origins() -> List[str]:
     """Read ALLOWED_ORIGINS from env (comma-separated). Defaults to wildcard.

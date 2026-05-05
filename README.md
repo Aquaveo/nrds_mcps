@@ -1,6 +1,6 @@
 # NRDS MCP Server
 
-[Model Context Protocol](https://modelcontextprotocol.io) server exposing NRDS data tools — query S3-backed output files, list available models / dates / forecasts, create charts, and query hydrofabric data.
+[Model Context Protocol](https://modelcontextprotocol.io) server exposing **data-only** NRDS tools — query S3-backed output files, list available models / dates / forecasts, look up hydrofabric features. Pair with a host that owns rendering (charts, maps, tables); this server returns rows and metadata only and does not produce host-renderable payloads.
 
 Built on [FastMCP](https://github.com/jlowin/fastmcp) with SSE transport.
 
@@ -63,7 +63,7 @@ The container exposes `GET /health` returning `200 {"status":"ok"}`. The Docker 
 | `/sse` | GET | MCP SSE transport endpoint (only when `MCP_TRANSPORT=sse`). |
 | `/health` | GET | Liveness probe. |
 
-The MCP tool surface (e.g., `list_available_models`, `query_outputs`, `create_chart`) is discovered automatically by MCP clients; consult the source for the full list.
+The MCP tool surface (e.g., `list_available_models`, `query_output_file_from_output_selector`, `lookup_hydrofabric_feature`) is discovered automatically by MCP clients; consult the source for the full list. To render a chart or map from these results, chain into a host-side render tool — this server does not return Plotly figure JSON or map configurations.
 
 ## Test Deployment (Google Cloud Run)
 

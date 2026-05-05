@@ -20,10 +20,8 @@ from .utils_rest import (
     _duckdb_lookup_hydrofabric_feature,
     _normalize_record,
     _get_feature_center,
-    _pick_filter_value,
     HYDROFABRIC_LAYER_CONFIG,
     validate_output_sql,
-    _create_plotly_chart,
     _success_payload,
     _error_payload,
     _list_payload,
@@ -603,206 +601,6 @@ def query_output_file_from_output_selector(
 
     return query_result
 
-def create_plotly_chart_from_output_file(s3_url, query, title: Optional[str] = None) -> Dict:
-    """Run a read-only DuckDB query against one NRDS output file in S3 (parquet or netcdf)
-    and return Plotly chart JSON.
-    """
-    raw_url = str(s3_url or "").strip()
-    kind = _detect_output_file_kind(raw_url)
-
-    if kind == "parquet":
-        err = _validate_nrds_output_file_url(BUCKET, raw_url, (".parquet",))
-    elif kind == "netcdf":
-        err = _validate_nrds_output_file_url(BUCKET, raw_url, (".nc", ".nc4"))
-    else:
-        err = "s3_url must point to one .parquet, .nc, or .nc4 NRDS output file"
-
-    if err:
-        return _error_payload(
-            "validation_error",
-            err,
-            file=raw_url,
-            query=query,
-        )
-
-    file_url = _normalize_output_file_url(raw_url)
-    logger.info(
-        "Received request to create Plotly chart from %s file: %s with query: %s",
-        kind,
-        file_url,
-        query,
-    )
-
-    try:
-        query = validate_output_sql(query)
-    except ValueError as e:
-        logger.error("Invalid SQL query for chart: %s", e)
-        return _error_payload(
-            "validation_error",
-            str(e),
-            file=file_url,
-            file_type=kind,
-            query=query,
-        )
-
-    try:
-        if kind == "parquet":
-            df = _duckdb_query_parquet(file_url, query)
-        else:
-            initial_df = _get_troute_df(file_url)
-            logger.info(
-                "Initial NetCDF DataFrame loaded with %s rows and columns: %s",
-                len(initial_df),
-                initial_df.columns.tolist(),
-            )
-            df = _duckdb_query_netcdf(initial_df, query)
-
-        if "time" in df.columns:
-            df["time"] = pd.to_datetime(df["time"], errors="coerce").dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-        logger.info("Chart query returned %s rows and columns: %s", len(df), df.columns.tolist())
-        fig = _create_plotly_chart(df=df, title=title)
-
-        if isinstance(fig, dict) and fig.get("error"):
-            return _error_payload(
-                "validation_error",
-                fig["error"],
-                file=file_url,
-                file_type=kind,
-                query=query,
-                columns=list(df.columns),
-                rows=int(len(df)),
-            )
-
-        return _success_payload(
-            file=file_url,
-            file_type=kind,
-            query=query,
-            columns=list(df.columns),
-            rows=int(len(df)),
-            figure=fig,
-        )
-
-    except FileNotFoundError:
-        logger.error("File not found: %s", file_url)
-        return _error_payload(
-            "not_found",
-            f"File not found: {file_url}",
-            file=file_url,
-            file_type=kind,
-            query=query,
-            columns=[],
-            rows=0,
-        )
-    except Exception as e:
-        logger.error("Error creating chart from %s file: %s", kind, e)
-        return _error_payload(
-            "execution_error",
-            str(e),
-            file=file_url,
-            file_type=kind,
-            query=query,
-        )
-
-def create_plotly_chart_from_parquet_output_file(s3_url, query, title: Optional[str] = None) -> Dict:
-    """Backward-compatible parquet-only chart wrapper."""
-    raw_url = str(s3_url or "").strip()
-    err = _validate_nrds_output_file_url(BUCKET, raw_url, (".parquet",))
-    if err:
-        return _error_payload(
-            "validation_error",
-            err,
-            file=raw_url,
-            query=query,
-        )
-
-    return create_plotly_chart_from_output_file(
-        s3_url=raw_url,
-        query=query,
-        title=title,
-    )
-
-def create_plotly_chart_from_output_selector(
-    model,
-    date,
-    forecast,
-    cycle,
-    vpu,
-    query,
-    title: Optional[str] = None,
-    ensemble: Optional[str] = None,
-    file_name: Optional[str] = None,
-    index: Optional[int] = 0,
-) -> Dict:
-    """Resolve an output file by selector and create a Plotly chart from the selected parquet or netcdf file."""
-    logger.info(
-        "Received request to create Plotly chart from selector with "
-        "model=%s date=%s forecast=%s cycle=%s vpu=%s ensemble=%s file_name=%s index=%s title=%s query=%s",
-        model,
-        date,
-        forecast,
-        cycle,
-        vpu,
-        ensemble,
-        file_name,
-        index,
-        title,
-        query,
-    )
-
-    resolved = get_output_file(
-        model=model,
-        date=date,
-        forecast=forecast,
-        cycle=cycle,
-        vpu=vpu,
-        file_name=file_name,
-        index=None if file_name is not None else (0 if index is None else index),
-        ensemble=ensemble,
-    )
-
-    if not isinstance(resolved, dict):
-        return _error_payload(
-            "execution_error",
-            "Unexpected response while resolving output file.",
-        )
-
-    if resolved.get("ok") is False:
-        return resolved
-
-    selected = resolved.get("selected")
-    if not selected:
-        return _error_payload(
-            "not_found",
-            "No output file matched the selector.",
-            dir=resolved.get("dir"),
-            count=resolved.get("count", 0),
-            selected=None,
-        )
-
-    selected_path = str((selected or {}).get("path") or "").strip()
-    if not selected_path:
-        return _error_payload(
-            "not_found",
-            "Resolved output file does not include a path.",
-            dir=resolved.get("dir"),
-            count=resolved.get("count", 0),
-            selected=selected,
-        )
-
-    chart_result = create_plotly_chart_from_output_file(
-        s3_url=selected_path,
-        query=query,
-        title=title,
-    )
-
-    if isinstance(chart_result, dict):
-        chart_result.setdefault("dir", resolved.get("dir"))
-        chart_result.setdefault("count", resolved.get("count"))
-        chart_result.setdefault("selected", selected)
-
-    return chart_result
-
 def query_hydrofabric_parquet_file(hydrofabric_id: str, limit: int = 50) -> Dict:
     """Run a hydrofabric id lookup against the hydrofabric parquet file on S3."""
     logger.info(
@@ -858,76 +656,82 @@ def query_hydrofabric_parquet_file(hydrofabric_id: str, limit: int = 50) -> Dict
         )
 
 
-def build_hydrofabric_feature_map_config(hydrofabric_id: str) -> Dict[str, Any]:
+def _bbox_from_row(row: Dict[str, Any]) -> Optional[List[float]]:
+    """Compute a [minLon, minLat, maxLon, maxLat] bbox from a hydrofabric row.
+
+    Tries explicit min/max columns first, then falls back to a degenerate
+    bbox (a single point) when only a center coordinate is available.
+    Returns None if no usable spatial information is on the row.
+    """
+    keys = ("minx", "miny", "maxx", "maxy")
+    if all(row.get(k) is not None for k in keys):
+        try:
+            return [
+                float(row["minx"]),
+                float(row["miny"]),
+                float(row["maxx"]),
+                float(row["maxy"]),
+            ]
+        except (TypeError, ValueError):
+            pass
+
+    center = _get_feature_center(row)
+    if center is not None:
+        lon, lat = center
+        return [float(lon), float(lat), float(lon), float(lat)]
+
+    return None
+
+
+def lookup_hydrofabric_feature(hydrofabric_id: str) -> Dict[str, Any]:
+    """Look up one hydrofabric feature by id and return data only.
+
+    Returns a flat shape:
+      - rows: list of matching rows from the hydrofabric index
+      - pmtiles_layer: the PMTiles layer name associated with the feature, or None
+      - bbox: [minLon, minLat, maxLon, maxLat] bounding the feature, or None
+
+    On empty match: rows=[], pmtiles_layer=None, bbox=None.
+    The host is responsible for assembling any map view from this data.
+    """
     hydrofabric_id = (hydrofabric_id or "").strip()
     if not hydrofabric_id:
         return _error_payload(
             "bad_request",
             "hydrofabric_id is required",
-            type="hydrofabric_feature_map_config",
+            rows=[],
+            pmtiles_layer=None,
+            bbox=None,
         )
 
     try:
         df = _duckdb_lookup_hydrofabric_feature(hydrofabric_id)
         if df.empty:
             return _success_payload(
-                type="hydrofabric_feature_map_config",
-                query=hydrofabric_id,
-                found=False,
-                feature=None,
-                match=None,
-                highlight=None,
-                camera=None,
+                rows=[],
+                pmtiles_layer=None,
+                bbox=None,
             )
 
-        row = _normalize_record(df.iloc[0].to_dict())
-        layer_key = str(row.get("layer") or "").strip().lower()
-
+        rows = [_normalize_record(r) for r in df.to_dict(orient="records")]
+        first = rows[0]
+        layer_key = str(first.get("layer") or "").strip().lower()
         layer_cfg = HYDROFABRIC_LAYER_CONFIG.get(layer_key)
-        if not layer_cfg:
-            return _error_payload(
-                "unsupported_layer",
-                f"Unsupported hydrofabric layer '{layer_key}'",
-                type="hydrofabric_feature_map_config",
-                query=hydrofabric_id,
-                found=True,
-                feature=row,
-            )
-
-        center = _get_feature_center(row)
-        id_property = layer_cfg["id_property"]
-        filter_value = _pick_filter_value(row, id_property, hydrofabric_id)
+        pmtiles_layer = layer_cfg["map_layer_id"] if layer_cfg else None
+        bbox = _bbox_from_row(first)
 
         return _success_payload(
-            type="hydrofabric_feature_map_config",
-            query=hydrofabric_id,
-            found=True,
-            feature=row,
-            match={
-                "matched_column": row.get("matched_column"),
-                "match_type": row.get("match_type"),
-            },
-            highlight={
-                "pmtiles_url": layer_cfg["pmtiles_url"],
-                "map_layer_id": layer_cfg["map_layer_id"],
-                "id_property": id_property,
-                "value": filter_value,
-                "layer_key": layer_key,
-            },
-            camera={
-                "mode": "rendered-feature-bounds-with-fallback",
-                "center": center,
-                "zoom": layer_cfg["default_zoom"],
-                "padding": 40,
-                "maxZoom": 13,
-            },
+            rows=rows,
+            pmtiles_layer=pmtiles_layer,
+            bbox=bbox,
         )
 
     except Exception as e:
-        logger.exception("Error building hydrofabric map config")
+        logger.exception("Error looking up hydrofabric feature")
         return _error_payload(
             "execution_error",
             str(e),
-            type="hydrofabric_feature_map_config",
-            query=hydrofabric_id,
+            rows=[],
+            pmtiles_layer=None,
+            bbox=None,
         )
