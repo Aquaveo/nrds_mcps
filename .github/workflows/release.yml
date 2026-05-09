@@ -229,13 +229,27 @@ jobs:
               "lookup_hydrofabric_feature",
           )
 
+          # Prompts (slash-command templates) that must exist on the
+          # deployed server. Mirrors the REQUIRED tool-name vocabulary
+          # above so a regression that drops the @mcp.prompt registration
+          # fails the deploy gate instead of shipping silently.
+          REQUIRED_PROMPTS = (
+              "plot_timeseries",
+          )
+
           async def smoke():
               async with Client(URL) as c:
                   tools = await c.list_tools()
-                  return [t.name for t in tools]
+                  prompts = await c.list_prompts()
+                  return (
+                      [t.name for t in tools],
+                      [p.name for p in prompts],
+                  )
 
           try:
-              names = asyncio.run(asyncio.wait_for(smoke(), timeout=30))
+              names, prompt_names = asyncio.run(
+                  asyncio.wait_for(smoke(), timeout=30)
+              )
           except asyncio.TimeoutError:
               print("::error::MCP smoke timed out after 30 s")
               sys.exit(1)
@@ -244,6 +258,12 @@ jobs:
           count = len(names)
           print(f"tools/list returned {count} tools")
           for name in sorted(names):
+              print(f"  - {name}")
+
+          prompt_set = set(prompt_names)
+          prompt_count = len(prompt_names)
+          print(f"prompts/list returned {prompt_count} prompts")
+          for name in sorted(prompt_names):
               print(f"  - {name}")
 
           failed = False
@@ -271,6 +291,23 @@ jobs:
                   f"::error::tools/list returned {count} tools, "
                   f"expected at least {EXPECTED}"
               )
+              failed = True
+
+          if prompt_count < 1:
+              print(
+                  f"::error::prompts/list returned {prompt_count} prompts, "
+                  "expected at least 1"
+              )
+              failed = True
+
+          missing_prompts = [
+              n for n in REQUIRED_PROMPTS if n not in prompt_set
+          ]
+          if missing_prompts:
+              for n in missing_prompts:
+                  print(
+                      f"::error::Required prompt missing from prompts/list: {n}"
+                  )
               failed = True
 
           if failed:

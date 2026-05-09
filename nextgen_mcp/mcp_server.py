@@ -737,6 +737,61 @@ def lookup_hydrofabric_feature(
     return result
 
 
+@mcp.prompt
+def plot_timeseries(
+    variable: Annotated[str, Field(description="flow / velocity / streamflow")],
+    feature_id: Annotated[str, Field(description="feature id, e.g., 1019290")],
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    forecast: Annotated[
+        str,
+        Field(description="short_range / medium_range / analysis_assim_extend"),
+    ],
+    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
+    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+    index: Annotated[str, Field(description="0-based output index, e.g., 0")],
+) -> str:
+    """Plot a NRDS output-file timeseries as a line chart.
+
+    Renders a natural-language request that drives a downstream
+    ``query_output_file_from_output_selector`` invocation followed by a
+    line-chart visualization of the resulting time series. Designed for
+    the chatbox slash-command surface.
+
+    All 8 arguments are ``required: true`` with no Python-level
+    defaults; each carries a ``Field(description=...)`` advertising
+    the valid format or enum (e.g., ``cfe_nom / lstm / routing_only``,
+    ``yyyy-mm-dd``). Calling ``prompts/get(name, {})`` with empty args
+    deliberately raises a ``-32602 Invalid arguments`` error — the
+    standard MCP wire shape used by third-party servers.
+
+    Slash-command UX: ``chatbox-core`` synthesizes
+    ``{argName: "[" + arg.description + "]"}`` for every required
+    argument when calling ``prompts/get`` from the popover. The
+    rendered prompt then contains the hints inline as
+    ``[bracket]`` tokens for the user to replace.
+
+    Hints are derived from the validation types on
+    ``query_output_file_from_output_selector`` and the NRDS Literal
+    types in ``validations.py`` (``MODELS``, ``FORECASTS``,
+    ``DATE_PATTERN``). When NRDS adds a new model, forecast, or vpu,
+    update the description string here in lockstep.
+
+    Argument names ``model``, ``forecast``, ``date``, ``cycle``, ``vpu``,
+    and ``index`` align with the selector args of
+    ``query_output_file_from_output_selector``. ``variable`` and
+    ``feature_id`` are narrative-only — they help the LLM build the
+    DuckDB ``query`` value but have no first-class counterpart in the
+    selector tool's schema.
+    """
+    return (
+        f"Retrieve a line chart of the time series for variable {variable} "
+        f"for feature id {feature_id} for output index {index} for the "
+        f"{forecast} forecast on {model} model and date {date}, "
+        f"cycle {cycle}, and vpu {vpu}"
+    )
+
+
 def _parse_allowed_origins() -> List[str]:
     """Read ALLOWED_ORIGINS from env (comma-separated). Defaults to wildcard.
 
