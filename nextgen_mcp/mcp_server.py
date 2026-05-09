@@ -739,14 +739,14 @@ def lookup_hydrofabric_feature(
 
 @mcp.prompt
 def plot_timeseries(
-    variable: str = "[variable]",
-    feature_id: str = "[feature_id]",
-    model: str = "[model]",
-    forecast: str = "[forecast]",
-    date: str = "[date]",
-    cycle: str = "[cycle]",
-    vpu: str = "[vpu]",
-    index: str = "[index]",
+    variable: str = "[flow/velocity/streamflow]",
+    feature_id: str = "[feature id, e.g., 1019290]",
+    model: str = "[cfe_nom/lstm/routing_only]",
+    forecast: str = "[short_range/medium_range/analysis_assim_extend]",
+    date: str = "[yyyy-mm-dd]",
+    cycle: str = "[00-23, e.g., 00]",
+    vpu: str = "[06, VPU_06, or 3W]",
+    index: str = "[0-based output index, e.g., 0]",
 ) -> str:
     """Plot a NRDS output-file timeseries as a line chart.
 
@@ -754,7 +754,16 @@ def plot_timeseries(
     ``query_output_file_from_output_selector`` invocation followed by a
     line-chart visualization of the resulting time series. Designed for
     the chatbox slash-command surface: defaults render as ``[bracket]``
-    placeholder tokens that the user fills in before sending.
+    placeholder tokens that the user replaces before sending.
+
+    Each bracket is a **hint**, not a literal arg name — the value
+    inside the brackets advertises the format or enum the user should
+    enter (e.g., ``[yyyy-mm-dd]`` for a date, ``[cfe_nom/lstm/routing_only]``
+    for a model). Hints are derived from the validation types on
+    ``query_output_file_from_output_selector`` and the NRDS Literal
+    types in ``validations.py`` (``MODELS``, ``FORECASTS``,
+    ``DATE_PATTERN``). When NRDS adds a new model, forecast, or vpu,
+    update the hint string here in lockstep.
 
     Argument names ``model``, ``forecast``, ``date``, ``cycle``, ``vpu``,
     and ``index`` align with the selector args of

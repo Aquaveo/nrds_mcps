@@ -64,6 +64,24 @@ PLOT_TIMESERIES_ARG_NAMES = (
     "index",
 )
 
+# Hint-bearing default values per arg. Each default is a `[bracketed]`
+# string that doubles as a user-facing format hint — derived from the
+# NRDS validation types (`MODELS`, `FORECASTS`, `DATE_PATTERN` in
+# `nextgen_mcp/validations.py` / `nextgen_mcp/utils.py`) and the
+# `query_output_file_from_output_selector` field descriptions. When NRDS
+# adds a new model/forecast/vpu, update both the prompt default in
+# `mcp_server.py` and this dict in lockstep.
+PLOT_TIMESERIES_DEFAULTS = {
+    "variable": "[flow/velocity/streamflow]",
+    "feature_id": "[feature id, e.g., 1019290]",
+    "model": "[cfe_nom/lstm/routing_only]",
+    "forecast": "[short_range/medium_range/analysis_assim_extend]",
+    "date": "[yyyy-mm-dd]",
+    "cycle": "[00-23, e.g., 00]",
+    "vpu": "[06, VPU_06, or 3W]",
+    "index": "[0-based output index, e.g., 0]",
+}
+
 # Args shared with query_output_file_from_output_selector (lock parity).
 OVERLAPPING_ARG_NAMES = ("model", "date", "forecast", "cycle", "vpu", "index")
 
@@ -108,8 +126,11 @@ def test_list_prompts_returns_plot_timeseries():
 
 def test_get_prompt_with_no_args_renders_all_bracket_placeholders():
     """``client.get_prompt("plot_timeseries", {})`` returns ``messages``
-    whose concatenated text contains every ``[arg_name]`` placeholder
+    whose concatenated text contains every hint-bearing bracket default
     verbatim — all 8 brackets intact (K4 placeholder-default convention).
+    Each default is a user-facing format hint derived from the NRDS
+    validation types, not the bare arg name (e.g., ``[yyyy-mm-dd]``
+    rather than ``[date]``).
     """
     async def go():
         async with Client(mcp) as c:
@@ -118,17 +139,17 @@ def test_get_prompt_with_no_args_renders_all_bracket_placeholders():
     result = _run(go())
     text = _concat_text(result.messages)
 
-    for name in PLOT_TIMESERIES_ARG_NAMES:
-        token = f"[{name}]"
-        assert token in text, (
-            f"expected placeholder {token!r} verbatim in rendered prompt; "
-            f"got: {text!r}"
+    for name, hint in PLOT_TIMESERIES_DEFAULTS.items():
+        assert hint in text, (
+            f"expected hint default {hint!r} for arg {name!r} verbatim "
+            f"in rendered prompt; got: {text!r}"
         )
 
 
 def test_get_prompt_substitutes_supplied_args_only():
     """Supplying ``{"variable": "flow", "feature_id": "1019290"}``
-    substitutes those two args; the OTHER 6 brackets remain intact.
+    substitutes those two args; the OTHER 6 hint-bearing brackets
+    remain intact.
     """
     async def go():
         async with Client(mcp) as c:
@@ -146,20 +167,20 @@ def test_get_prompt_substitutes_supplied_args_only():
         f"expected '1019290' in rendered prompt; got: {text!r}"
     )
 
-    # The two substituted brackets are gone.
-    assert "[variable]" not in text, (
-        f"[variable] should have been substituted; got: {text!r}"
-    )
-    assert "[feature_id]" not in text, (
-        f"[feature_id] should have been substituted; got: {text!r}"
-    )
+    # The two substituted hint defaults are gone.
+    for substituted in ("variable", "feature_id"):
+        hint = PLOT_TIMESERIES_DEFAULTS[substituted]
+        assert hint not in text, (
+            f"hint {hint!r} for {substituted!r} should have been "
+            f"substituted; got: {text!r}"
+        )
 
-    # The remaining 6 brackets survive.
+    # The remaining 6 hint defaults survive.
     for name in ("model", "forecast", "date", "cycle", "vpu", "index"):
-        token = f"[{name}]"
-        assert token in text, (
-            f"expected unsubstituted placeholder {token!r} to remain in "
-            f"rendered prompt; got: {text!r}"
+        hint = PLOT_TIMESERIES_DEFAULTS[name]
+        assert hint in text, (
+            f"expected unsubstituted hint {hint!r} for {name!r} to remain "
+            f"in rendered prompt; got: {text!r}"
         )
 
 
