@@ -739,31 +739,43 @@ def lookup_hydrofabric_feature(
 
 @mcp.prompt
 def plot_timeseries(
-    variable: str = "[flow/velocity/streamflow]",
-    feature_id: str = "[feature id, e.g., 1019290]",
-    model: str = "[cfe_nom/lstm/routing_only]",
-    forecast: str = "[short_range/medium_range/analysis_assim_extend]",
-    date: str = "[yyyy-mm-dd]",
-    cycle: str = "[00-23, e.g., 00]",
-    vpu: str = "[06, VPU_06, or 3W]",
-    index: str = "[0-based output index, e.g., 0]",
+    variable: Annotated[str, Field(description="flow / velocity / streamflow")],
+    feature_id: Annotated[str, Field(description="feature id, e.g., 1019290")],
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    forecast: Annotated[
+        str,
+        Field(description="short_range / medium_range / analysis_assim_extend"),
+    ],
+    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
+    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+    index: Annotated[str, Field(description="0-based output index, e.g., 0")],
 ) -> str:
     """Plot a NRDS output-file timeseries as a line chart.
 
     Renders a natural-language request that drives a downstream
     ``query_output_file_from_output_selector`` invocation followed by a
     line-chart visualization of the resulting time series. Designed for
-    the chatbox slash-command surface: defaults render as ``[bracket]``
-    placeholder tokens that the user replaces before sending.
+    the chatbox slash-command surface.
 
-    Each bracket is a **hint**, not a literal arg name — the value
-    inside the brackets advertises the format or enum the user should
-    enter (e.g., ``[yyyy-mm-dd]`` for a date, ``[cfe_nom/lstm/routing_only]``
-    for a model). Hints are derived from the validation types on
+    All 8 arguments are ``required: true`` with no Python-level
+    defaults; each carries a ``Field(description=...)`` advertising
+    the valid format or enum (e.g., ``cfe_nom / lstm / routing_only``,
+    ``yyyy-mm-dd``). Calling ``prompts/get(name, {})`` with empty args
+    deliberately raises a ``-32602 Invalid arguments`` error — the
+    standard MCP wire shape used by third-party servers.
+
+    Slash-command UX: ``chatbox-core`` synthesizes
+    ``{argName: "[" + arg.description + "]"}`` for every required
+    argument when calling ``prompts/get`` from the popover. The
+    rendered prompt then contains the hints inline as
+    ``[bracket]`` tokens for the user to replace.
+
+    Hints are derived from the validation types on
     ``query_output_file_from_output_selector`` and the NRDS Literal
     types in ``validations.py`` (``MODELS``, ``FORECASTS``,
     ``DATE_PATTERN``). When NRDS adds a new model, forecast, or vpu,
-    update the hint string here in lockstep.
+    update the description string here in lockstep.
 
     Argument names ``model``, ``forecast``, ``date``, ``cycle``, ``vpu``,
     and ``index`` align with the selector args of
