@@ -737,6 +737,40 @@ def lookup_hydrofabric_feature(
     return result
 
 
+@mcp.prompt
+def plot_timeseries(
+    variable: str = "[variable]",
+    feature_id: str = "[feature_id]",
+    model: str = "[model]",
+    forecast: str = "[forecast]",
+    date: str = "[date]",
+    cycle: str = "[cycle]",
+    vpu: str = "[vpu]",
+    index: str = "[index]",
+) -> str:
+    """Plot a NRDS output-file timeseries as a line chart.
+
+    Renders a natural-language request that drives a downstream
+    ``query_output_file_from_output_selector`` invocation followed by a
+    line-chart visualization of the resulting time series. Designed for
+    the chatbox slash-command surface: defaults render as ``[bracket]``
+    placeholder tokens that the user fills in before sending.
+
+    Argument names ``model``, ``forecast``, ``date``, ``cycle``, ``vpu``,
+    and ``index`` align with the selector args of
+    ``query_output_file_from_output_selector``. ``variable`` and
+    ``feature_id`` are narrative-only — they help the LLM build the
+    DuckDB ``query`` value but have no first-class counterpart in the
+    selector tool's schema.
+    """
+    return (
+        f"Retrieve a line chart of the time series for variable {variable} "
+        f"for feature id {feature_id} for output index {index} for the "
+        f"{forecast} forecast on {model} model and date {date}, "
+        f"cycle {cycle}, and vpu {vpu}"
+    )
+
+
 def _parse_allowed_origins() -> List[str]:
     """Read ALLOWED_ORIGINS from env (comma-separated). Defaults to wildcard.
 
