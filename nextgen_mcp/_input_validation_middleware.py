@@ -44,6 +44,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware.middleware import (
     CallNext,
     Middleware,
@@ -54,6 +55,41 @@ import mcp.types as mt
 
 
 LOGGER = logging.getLogger("nextgen_mcp")
+
+
+class InvalidLLMInputError(ValueError):
+    """Marker exception: bad LLM/user-supplied input that can be retried.
+
+    Tool bodies raise this for cases that are not caught by pydantic schema
+    validation but ARE recoverable by re-calling with corrected arguments
+    (date out of allowed bounds, start>end, file_name XOR index, etc.).
+
+    The middleware catches this specifically and emits an ``invalid_args:``
+    envelope. Plain ``ValueError`` (or its stdlib subclasses like
+    ``UnicodeDecodeError`` / ``JSONDecodeError``) raised from inside a tool
+    body is treated as a programmer / infrastructure error and re-raised
+    unchanged — otherwise transient S3 / parse failures would be silently
+    re-classified as LLM-input mistakes and trigger fruitless retry loops.
+    """
+
+
+# Pydantic error types whose `ctx` carries actionable info we want to
+# carry through into the envelope. Each entry names which ctx keys are
+# safe to include (excludes the bad input value). Shared by
+# `_summarize_errors` (which decides what to copy from ctx into `details`)
+# and `_describe_other_errors` (which phrases the constraints). Keeping
+# them in one place avoids drift between the two surfaces.
+_CTX_KEY_ALLOWLIST: dict[str, tuple[str, ...]] = {
+    "string_pattern_mismatch": ("pattern",),
+    "string_too_short": ("min_length",),
+    "string_too_long": ("max_length",),
+    "greater_than_equal": ("ge",),
+    "less_than_equal": ("le",),
+    "greater_than": ("gt",),
+    "less_than": ("lt",),
+    "literal_error": ("expected",),
+    "enum": ("expected",),
+}
 
 
 class InputValidationEnvelopeMiddleware(Middleware):
@@ -106,6 +142,33 @@ class InputValidationEnvelopeMiddleware(Middleware):
                 len(other_errors),
             )
 
+            return ToolResult(structured_content=envelope)
+        except ToolError as exc:
+            # FastMCP server.py:1263 wraps any tool-body Exception in a
+            # ToolError before middleware sees it. Only InvalidLLMInputError
+            # (an explicit sentinel ValueError subclass) is treated as
+            # LLM-recoverable invalid input. Plain ValueError and its
+            # stdlib subclasses (UnicodeDecodeError, JSONDecodeError) raised
+            # incidentally from helpers like int(), datetime.fromisoformat,
+            # or pandas parsers are NOT recoverable — they signal upstream
+            # data corruption or programmer error, and re-raising preserves
+            # observability and avoids fruitless LLM retry loops.
+            cause = exc.__cause__
+            if not isinstance(cause, InvalidLLMInputError):
+                raise
+            tool_name = getattr(context.message, "name", "<unknown>")
+            message = str(cause) or "tool input failed validation"
+            envelope = {
+                "error": f"invalid_args: {message}",
+                "fix_hint": (
+                    f"{message} Adjust the offending argument and retry."
+                ),
+            }
+            LOGGER.warning(
+                "tool input rejected (InvalidLLMInputError): tool=%s message=%s",
+                tool_name,
+                message,
+            )
             return ToolResult(structured_content=envelope)
 
 
@@ -197,7 +260,10 @@ def _build_fix_hint(
 
     Names the specific kwargs to drop / provide so the LLM doesn't have
     to re-derive them from the bucket lists. Lists `expected_kwargs`
-    last as the canonical reference.
+    last as the canonical reference. For type-specific errors with
+    actionable context (regex pattern, numeric bounds), names the
+    field AND the constraint so the LLM has the info needed to satisfy
+    the validator on retry.
     """
     bits: list[str] = []
     if unexpected:
@@ -205,10 +271,17 @@ def _build_fix_hint(
     if missing:
         bits.append(f"Provide the missing required args: {missing}.")
     if others:
-        bits.append(
-            "Fix the type / value errors listed in `details` "
-            "(field + pydantic error type)."
-        )
+        # Build a per-field constraint description from the pydantic error
+        # type + carried-through ctx. Falls back to a generic hint when
+        # the type isn't one we know how to phrase.
+        per_field_hints = _describe_other_errors(others)
+        if per_field_hints:
+            bits.append(per_field_hints)
+        else:
+            bits.append(
+                "Fix the type / value errors listed in `details` "
+                "(field + pydantic error type)."
+            )
     if expected:
         bits.append(f"Valid kwargs for this tool: {expected}.")
     if not bits:
@@ -216,19 +289,96 @@ def _build_fix_hint(
     return " ".join(bits)
 
 
+def _describe_other_errors(others: list[dict[str, Any]]) -> str:
+    """Build a per-field natural-language constraint description.
+
+    Reads pydantic error dicts (post-`_summarize_errors`-equivalent shape,
+    or raw — both supported) and produces a single phrase per field naming
+    the field AND the constraint it failed. Returns "" when none of the
+    error types have a known phrasing, so the caller can fall back to the
+    generic hint.
+
+    Each phrase is shaped to be directly actionable by an LLM on retry:
+    "<field> must match pattern '<regex>'" beats "field <field> failed
+    string_pattern_mismatch".
+    """
+    bits: list[str] = []
+    for err in others:
+        loc = err.get("loc") or ()
+        field = err.get("field") or (
+            ".".join(str(p) for p in loc) if loc else "<value>"
+        )
+        err_type = err.get("type")
+        # Merge raw ctx (raw pydantic error path) with the entry's top-level
+        # keys (post-_summarize_errors path). Top-level wins on collision —
+        # that's the flattened shape's intended source of truth.
+        merged = {**(err.get("ctx") or {}), **err}
+
+        if err_type == "string_pattern_mismatch":
+            pattern = merged.get("pattern")
+            if pattern:
+                bits.append(f"{field} must match pattern {pattern!r}.")
+        elif err_type == "string_too_short":
+            min_length = merged.get("min_length")
+            if min_length is not None:
+                bits.append(
+                    f"{field} must be at least {min_length} character(s) long."
+                )
+        elif err_type == "string_too_long":
+            max_length = merged.get("max_length")
+            if max_length is not None:
+                bits.append(
+                    f"{field} must be at most {max_length} character(s) long."
+                )
+        elif err_type in ("greater_than_equal", "greater_than"):
+            bound = (
+                merged.get("ge") if err_type == "greater_than_equal"
+                else merged.get("gt")
+            )
+            op = ">=" if err_type == "greater_than_equal" else ">"
+            if bound is not None:
+                bits.append(f"{field} must be {op} {bound}.")
+        elif err_type in ("less_than_equal", "less_than"):
+            bound = (
+                merged.get("le") if err_type == "less_than_equal"
+                else merged.get("lt")
+            )
+            op = "<=" if err_type == "less_than_equal" else "<"
+            if bound is not None:
+                bits.append(f"{field} must be {op} {bound}.")
+        elif err_type in ("literal_error", "enum"):
+            expected = merged.get("expected")
+            if expected is not None:
+                bits.append(f"{field} must be one of: {expected}.")
+
+    return " ".join(bits)
+
+
 def _summarize_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Strip pydantic error dicts to a stable, value-free summary.
 
-    Names + types only; no input values. Avoids leaking user-supplied or
-    LLM-generated content into the LLM-facing envelope.
+    Names + types + actionable context (regex pattern, numeric bounds);
+    no user-supplied values. Carries forward the parts of pydantic's
+    ``ctx`` that tell the LLM what to satisfy (e.g. the actual regex
+    pattern on string_pattern_mismatch) without leaking the bad input.
+
+    Observed 2026-05-10: dropping ``ctx`` entirely on string_pattern_mismatch
+    left the LLM with only `{field, type}` and no clue what pattern to
+    match. The middleware DID emit an envelope, but its `fix_hint` was
+    too generic to drive recovery.
     """
     summary: list[dict[str, Any]] = []
     for err in errors:
         loc = err.get("loc") or ()
-        summary.append(
-            {
-                "field": ".".join(str(p) for p in loc) if loc else None,
-                "type": err.get("type"),
-            }
-        )
+        err_type = err.get("type")
+        entry: dict[str, Any] = {
+            "field": ".".join(str(p) for p in loc) if loc else None,
+            "type": err_type,
+        }
+        ctx = err.get("ctx") or {}
+        allowed_keys = _CTX_KEY_ALLOWLIST.get(err_type or "", ())
+        for key in allowed_keys:
+            if key in ctx:
+                entry[key] = ctx[key]
+        summary.append(entry)
     return summary

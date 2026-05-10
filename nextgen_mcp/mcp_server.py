@@ -24,7 +24,10 @@ from .validations import (
     FORECASTS,
     MODELS
 )
-from ._input_validation_middleware import InputValidationEnvelopeMiddleware
+from ._input_validation_middleware import (
+    InputValidationEnvelopeMiddleware,
+    InvalidLLMInputError,
+)
 from ._observability_middleware import ToolCallObservabilityMiddleware
 
 # Middleware order:
@@ -106,7 +109,7 @@ def _validate_date_bounds(d, field_name: str):
             _MIN_ALLOWED_DATE,
             today,
         )
-        raise ValueError(
+        raise InvalidLLMInputError(
             f"'{field_name}' must be between {_MIN_ALLOWED_DATE} and {today} (got {d})"
         )
     return d
@@ -203,7 +206,7 @@ def list_available_dates_tool(
             start_date,
             end_date,
         )
-        raise ValueError(
+        raise InvalidLLMInputError(
             f"'start' must be <= 'end' (got start={start_date}, end={end_date})"
         )
 
@@ -501,7 +504,9 @@ def resolve_output_file_tool(
         LOGGER.warning(
             "Invalid resolve_output_file call: exactly one of file_name or index is required"
         )
-        raise ValueError("Provide exactly one of 'file_name' or 'index'.")
+        raise InvalidLLMInputError(
+            "Provide exactly one of 'file_name' or 'index'."
+        )
 
     end_date = _parse_date_or_today(date, "date")
     params: Dict[str, Any] = {
