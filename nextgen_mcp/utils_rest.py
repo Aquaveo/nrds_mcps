@@ -7,6 +7,8 @@ import re
 import pandas as pd
 import duckdb
 import xarray as xr
+
+from ._io_config import duckdb_connect_with_httpfs, open_fsspec_file
 from shapely import wkb, wkt
 from shapely.geometry import shape
 import plotly.express as px
@@ -226,14 +228,8 @@ def _pick_filter_value(row: Dict[str, Any], id_property: str, requested_id: str)
     return str(requested_id)
 
 def _duckdb_lookup_hydrofabric_feature(hydrofabric_id: str) -> pd.DataFrame:
-    con = duckdb.connect(database=":memory:")
+    con = duckdb_connect_with_httpfs()
     try:
-        try:
-            con.execute("LOAD httpfs")
-        except Exception:
-            con.execute("INSTALL httpfs")
-            con.execute("LOAD httpfs")
-
         con.execute(
             f"""
             CREATE OR REPLACE TEMP VIEW output AS
@@ -303,8 +299,7 @@ def _load_geometry(value):
     return value
 
 def _lookup_flowpath_view(feature_id: str) -> dict:
-    con = duckdb.connect()
-    con.execute("INSTALL httpfs; LOAD httpfs;")
+    con = duckdb_connect_with_httpfs()
 
     row = con.execute(
         """
@@ -398,28 +393,26 @@ def _auto_pick_axes(columns: List[str]) -> tuple[str, str]:
     return (picked_x, picked_y)
 
 def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
-    """Load the t-route crosswalk DataFrame."""
+    """Load the t-route crosswalk DataFrame.
 
-    nc_xarray = xr.open_dataset(
-        s3_nc_url,
-        engine="h5netcdf"
-    )
-    nc_df = nc_xarray.to_dataframe()
-    nc_df = nc_df.reset_index()
+    Uses ``open_fsspec_file`` so the timeout-configured fsspec client
+    reaches the underlying h5netcdf transport. ``xarray.open_dataset``
+    cannot be called directly on a URL with a custom fsspec config — the
+    OpenFile context manager handles that.
+    """
+
+    with open_fsspec_file(s3_nc_url) as f:
+        nc_xarray = xr.open_dataset(f, engine="h5netcdf")
+        nc_df = nc_xarray.to_dataframe()
+        nc_df = nc_df.reset_index()
 
     return nc_df
 
 def _duckdb_query_hydrofabric_parquet(hydrofabric_id: str, limit: int = 50) -> pd.DataFrame:
     """Lookup hydrofabric rows by id/divide_id using exact and substring matching."""
 
-    con = duckdb.connect(database=":memory:")
+    con = duckdb_connect_with_httpfs()
     try:
-        try:
-            con.execute("LOAD httpfs")
-        except Exception:
-            con.execute("INSTALL httpfs")
-            con.execute("LOAD httpfs")
-
         con.execute(
             f"""
             CREATE OR REPLACE TEMP VIEW output AS
@@ -474,14 +467,8 @@ def _duckdb_query_parquet(file_url: str, query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query against a parquet file exposed as temp view `output`."""
     safe_file_url = file_url.replace("'", "''")
 
-    con = duckdb.connect(database=":memory:")
+    con = duckdb_connect_with_httpfs()
     try:
-        try:
-            con.execute("LOAD httpfs")
-        except Exception:
-            con.execute("INSTALL httpfs")
-            con.execute("LOAD httpfs")
-
         con.execute(f"CREATE OR REPLACE TEMP VIEW output AS SELECT * FROM read_parquet('{safe_file_url}')")
         return con.sql(query).df()
     finally:

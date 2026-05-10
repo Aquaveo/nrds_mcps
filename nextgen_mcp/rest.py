@@ -1,9 +1,10 @@
 # nextgen_plugins/chatbox/rest.py
-import fsspec
 import os
 import json
 import logging
 import pandas as pd
+
+from ._io_config import s3_filesystem
 
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -79,7 +80,7 @@ def list_available_output_files(data) -> Dict:
         s3_url += f"/{vpu}/{NGEN_RUN_PREFIX}"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         outputs = fs.ls(s3_url, detail=False)
         outputs = sorted(outputs)
 
@@ -127,7 +128,7 @@ def get_output_file(model, date, forecast, cycle, vpu, file_name=None, index=Non
         s3_dir += f"/{vpu}/{NGEN_RUN_PREFIX}"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         files = fs.ls(s3_dir, detail=False)
 
         files = [f for f in files if f.lower().endswith(".parquet") or f.lower().endswith(".nc")]
@@ -192,7 +193,7 @@ def list_available_vpus(model, date, forecast, cycle) -> Dict:
         s3_url += "/1"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         dirs = fs.ls(s3_url, detail=False)
 
         vpu_ids = sorted(d.split("/")[-1] for d in dirs)
@@ -212,7 +213,7 @@ def list_available_cycles(model, date, forecast) -> Dict:
     s3_url = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}/{date}/{forecast}/"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         dirs = fs.ls(s3_url, detail=False)
 
         cycle_ids = [d.split("/")[-1] for d in dirs]
@@ -231,7 +232,7 @@ def list_available_dates(model) -> Dict:
     s3_url = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         dirs = fs.ls(s3_url, detail=False)
 
         date_ids = [d.split("/")[-1].rstrip("/") for d in dirs]  # e.g. ngen.20260218
@@ -264,7 +265,7 @@ def list_available_forecasts(model, date) -> Dict:
     date = _normalize_date_folder(date)
     s3_url = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}/{date}/"
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         dirs = fs.ls(s3_url, detail=False)
 
         forecast_ids = [d.split("/")[-1] for d in dirs]
@@ -281,7 +282,7 @@ def list_available_forecasts(model, date) -> Dict:
 def list_available_models() -> Dict:
     logger.info(f"Listing available models in bucket={BUCKET} under {OUTPUTS_DIR}")
     s3_url = f"s3://{BUCKET}/{OUTPUTS_DIR}"
-    fs = fsspec.filesystem("s3", anon=True)
+    fs = s3_filesystem()
     try:
         dirs = fs.ls(s3_url, detail=False)
         model_ids = [d.split("/")[-1] for d in dirs]
