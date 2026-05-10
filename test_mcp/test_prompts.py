@@ -424,8 +424,17 @@ def _tool_schema_properties(tool_name):
     return set((schema.get("properties") or {}).keys())
 
 
-def _synth_brackets(arg_names):
-    return {name: f"[{DISCOVERY_HINTS[name]}]" for name in arg_names}
+def _synth_brackets(arg_names, hints=None):
+    """Synthesize chatbox-core-style bracket args for the given arg names.
+
+    By default looks up hints in ``DISCOVERY_HINTS``. Pass a custom
+    ``hints`` dict for prompt batches that introduce new arg names not in
+    the discovery family (e.g., Phase 2b's ``QUERY_LOOKUP_HINTS`` adds
+    ``hydrofabric_id``, ``s3_url``, ``query``, ``index``, ``file_name``).
+    """
+    if hints is None:
+        hints = DISCOVERY_HINTS
+    return {name: f"[{hints[name]}]" for name in arg_names}
 
 
 # ---- list_models (zero-arg) -----------------------------------------------
@@ -603,6 +612,209 @@ def test_discovery_prompt_arg_name_parity_with_underlying_tool(
     the #1 risk in this plan (per feedback_input_output_name_alignment.md).
     """
     tool_name = DISCOVERY_PROMPT_TO_TOOL[prompt_name]
+    tool_args = _tool_schema_properties(tool_name)
+    assert arg_name in tool_args, (
+        f"{prompt_name}.{arg_name!r} not found on tool {tool_name!r} "
+        f"input schema; tool args: {tool_args}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Query/lookup prompts (Phase 2b) — lookup_feature, query_hydrofabric,
+# query_by_url, resolve_file_by_index, resolve_file_by_name
+#
+# These are query/lookup-archetype prompts (one per query/lookup tool plus
+# the XOR-driven extra variant for resolve_output_file). Tests mirror the
+# Phase 2a discovery harness shape: same five-test pattern parametrized
+# over the prompt set, plus a parallel arg-name parity block.
+# ---------------------------------------------------------------------------
+
+
+# Hints for the new arg names this batch introduces. Routing args
+# (model/date/forecast/cycle/vpu) are reused from DISCOVERY_HINTS via
+# dict merge so a single source of truth governs them.
+QUERY_LOOKUP_HINTS = {
+    **DISCOVERY_HINTS,
+    "hydrofabric_id": (
+        "Hydrofabric identifier to search in columns id and divide_id"
+    ),
+    "s3_url": (
+        "Full URL to ONE parquet or netcdf output file "
+        "(s3://... or https://...)"
+    ),
+    "query": "DuckDB SQL query against table output",
+    "index": "0-based output index, e.g., 0",
+    "file_name": "Exact filename (e.g. troute_output_...parquet)",
+}
+
+QUERY_LOOKUP_PROMPTS = {
+    "lookup_feature": ("hydrofabric_id",),
+    "query_hydrofabric": ("hydrofabric_id",),
+    "query_by_url": ("s3_url", "query"),
+    "resolve_file_by_index": (
+        "model",
+        "date",
+        "forecast",
+        "cycle",
+        "vpu",
+        "index",
+    ),
+    "resolve_file_by_name": (
+        "model",
+        "date",
+        "forecast",
+        "cycle",
+        "vpu",
+        "file_name",
+    ),
+}
+
+# Both resolve_file_* variants target the same underlying tool —
+# resolve_output_file's input schema contains both file_name and index,
+# so the parity test passes for either variant.
+QUERY_LOOKUP_PROMPT_TO_TOOL = {
+    "lookup_feature": "lookup_hydrofabric_feature",
+    "query_hydrofabric": "query_hydrofabric_parquet_file",
+    "query_by_url": "query_output_file",
+    "resolve_file_by_index": "resolve_output_file",
+    "resolve_file_by_name": "resolve_output_file",
+}
+
+
+@pytest.mark.parametrize("prompt_name", list(QUERY_LOOKUP_PROMPTS.keys()))
+def test_query_lookup_prompt_listed_with_expected_args(prompt_name):
+    """prompts/list includes the prompt with the expected argument names."""
+    prompts = _list_prompts()
+    by_name = {p.name: p for p in prompts}
+    assert prompt_name in by_name, (
+        f"{prompt_name!r} missing from prompts/list; got {sorted(by_name)}"
+    )
+    arg_names = {a.name for a in (by_name[prompt_name].arguments or [])}
+    expected = set(QUERY_LOOKUP_PROMPTS[prompt_name])
+    assert arg_names == expected, (
+        f"{prompt_name!r} args mismatch — expected {expected}, got {arg_names}"
+    )
+
+
+@pytest.mark.parametrize("prompt_name", list(QUERY_LOOKUP_PROMPTS.keys()))
+def test_query_lookup_prompt_all_args_required_with_hint_descriptions(
+    prompt_name,
+):
+    """Every argument is required:true with a non-empty description matching
+    the canonical hint after stripping FastMCP's auto-appended JSON-schema
+    note.
+    """
+    prompts = _list_prompts()
+    by_name = {p.name: p for p in prompts}
+    prompt = by_name[prompt_name]
+    by_arg = {a.name: a for a in (prompt.arguments or [])}
+    for name in QUERY_LOOKUP_PROMPTS[prompt_name]:
+        arg = by_arg[name]
+        assert arg.required is True, (
+            f"{prompt_name}.{name!r} should be required=True; "
+            f"got {arg.required!r}"
+        )
+        cleaned = _strip_fastmcp_schema_note(arg.description or "")
+        assert cleaned == QUERY_LOOKUP_HINTS[name], (
+            f"{prompt_name}.{name!r} description mismatch — expected "
+            f"{QUERY_LOOKUP_HINTS[name]!r}, got {cleaned!r}"
+        )
+
+
+@pytest.mark.parametrize("prompt_name", list(QUERY_LOOKUP_PROMPTS.keys()))
+def test_query_lookup_prompt_get_with_no_args_raises(prompt_name):
+    """prompts/get(name, {}) raises -32602 when args are required."""
+    with pytest.raises(McpError) as exc_info:
+        _get_prompt(prompt_name, {})
+    msg = str(exc_info.value)
+    assert "Missing required arguments" in msg or "required" in msg.lower(), (
+        f"{prompt_name}: expected missing-required-arguments error; got: {msg!r}"
+    )
+
+
+@pytest.mark.parametrize("prompt_name", list(QUERY_LOOKUP_PROMPTS.keys()))
+def test_query_lookup_prompt_synthesized_brackets_render_all_hints(
+    prompt_name,
+):
+    """Calling prompts/get with chatbox-core-synthesized {name: '[hint]'}
+    args produces a rendered prompt containing every hint bracket inline.
+    """
+    arg_names = QUERY_LOOKUP_PROMPTS[prompt_name]
+    result = _get_prompt(
+        prompt_name, _synth_brackets(arg_names, hints=QUERY_LOOKUP_HINTS)
+    )
+    text = _concat_text(result.messages)
+    for name in arg_names:
+        bracketed = f"[{QUERY_LOOKUP_HINTS[name]}]"
+        assert bracketed in text, (
+            f"{prompt_name}: expected synthesized bracket {bracketed!r} for "
+            f"arg {name!r} in rendered prompt; got: {text!r}"
+        )
+
+
+@pytest.mark.parametrize("prompt_name", list(QUERY_LOOKUP_PROMPTS.keys()))
+def test_query_lookup_prompt_substitutes_supplied_args_only(prompt_name):
+    """Supplying real values for some args + synthesized brackets for the
+    rest substitutes the real values while leaving unsupplied hints intact.
+    """
+    arg_names = QUERY_LOOKUP_PROMPTS[prompt_name]
+    args = _synth_brackets(arg_names, hints=QUERY_LOOKUP_HINTS)
+    # Substitute the first arg with a real value
+    first = arg_names[0]
+    real_values = {
+        "hydrofabric_id": "wb-1019290",
+        "s3_url": "s3://bucket/path/file.parquet",
+        "model": "cfe_nom",
+    }
+    args[first] = real_values[first]
+
+    result = _get_prompt(prompt_name, args)
+    text = _concat_text(result.messages)
+
+    assert real_values[first] in text, (
+        f"{prompt_name}: expected substituted {real_values[first]!r} for arg "
+        f"{first!r} in rendered prompt; got: {text!r}"
+    )
+    substituted_hint = f"[{QUERY_LOOKUP_HINTS[first]}]"
+    assert substituted_hint not in text, (
+        f"{prompt_name}: hint {substituted_hint!r} for {first!r} should "
+        f"have been substituted; got: {text!r}"
+    )
+    for name in arg_names[1:]:
+        bracketed = f"[{QUERY_LOOKUP_HINTS[name]}]"
+        assert bracketed in text, (
+            f"{prompt_name}: expected unsubstituted hint {bracketed!r} for "
+            f"{name!r} to remain; got: {text!r}"
+        )
+
+
+def _parametrize_per_prompt_arg_pairs_ql():
+    """(prompt_name, arg_name) tuples for query/lookup prompts.
+
+    Mirrors the Phase 2a discovery helper but reads from QUERY_LOOKUP_*
+    constants. Kept separate so the two batches' parity tests fail with
+    distinct names — clearer signal when a specific prompt drifts.
+    """
+    for prompt_name, arg_names in QUERY_LOOKUP_PROMPTS.items():
+        for arg_name in arg_names:
+            yield (prompt_name, arg_name)
+
+
+@pytest.mark.parametrize(
+    "prompt_name,arg_name", list(_parametrize_per_prompt_arg_pairs_ql())
+)
+def test_query_lookup_prompt_arg_name_parity_with_underlying_tool(
+    prompt_name, arg_name
+):
+    """Each prompt argument name exists on the underlying query/lookup
+    tool's input schema. Catches arg-name drift between prompt and tool —
+    the #1 risk in this plan (per feedback_input_output_name_alignment.md).
+
+    Both resolve_file_by_index and resolve_file_by_name target
+    resolve_output_file; index and file_name both exist on its schema, so
+    parity holds for either variant.
+    """
+    tool_name = QUERY_LOOKUP_PROMPT_TO_TOOL[prompt_name]
     tool_args = _tool_schema_properties(tool_name)
     assert arg_name in tool_args, (
         f"{prompt_name}.{arg_name!r} not found on tool {tool_name!r} "

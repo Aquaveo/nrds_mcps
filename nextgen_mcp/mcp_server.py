@@ -913,6 +913,152 @@ def list_output_files(
     )
 
 
+# ---------------------------------------------------------------------------
+# Query/lookup prompt templates (Phase 2b) — one per query/lookup tool plus
+# a second variant for resolve_output_file's XOR.
+#
+# Pattern mirrors the discovery prompts above:
+#   - Argument names mirror the underlying tool's argument names exactly.
+#   - All routing args are required:true on the prompt (per plan R6).
+#   - Hint copy is drawn from the underlying tool's Field(description=...);
+#     LOCKSTEP RULE: when the tool's description changes, update both the
+#     tool and the @mcp.prompt arg description here.
+#   - Prose is imperative declarative.
+#   - The two resolve_file_* variants split the file_name XOR index
+#     constraint so the user picks intent at the slash level — see each
+#     variant's "do NOT also supply" instruction.
+# ---------------------------------------------------------------------------
+
+
+@mcp.prompt
+def lookup_feature(
+    hydrofabric_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Hydrofabric identifier to search in columns id and divide_id"
+            )
+        ),
+    ],
+) -> str:
+    """Look up a hydrofabric feature by identifier.
+
+    Drives the ``lookup_hydrofabric_feature`` tool. The tool returns
+    matching rows from the hydrofabric index plus the associated PMTiles
+    layer name and a bounding box.
+    """
+    return f"Look up the hydrofabric feature with id {hydrofabric_id}."
+
+
+@mcp.prompt
+def query_hydrofabric(
+    hydrofabric_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Hydrofabric identifier to search in columns id and divide_id"
+            )
+        ),
+    ],
+) -> str:
+    """Query the hydrofabric index parquet for a given identifier.
+
+    Drives the ``query_hydrofabric_parquet_file`` tool. The optional
+    ``limit`` arg is intentionally not surfaced — only required-shaped
+    args appear on the prompt (see plan Scope Boundaries).
+    """
+    return (
+        f"Query the hydrofabric index parquet for the feature with id "
+        f"{hydrofabric_id}."
+    )
+
+
+@mcp.prompt
+def query_by_url(
+    s3_url: Annotated[
+        str,
+        Field(
+            description=(
+                "Full URL to ONE parquet or netcdf output file "
+                "(s3://... or https://...)"
+            )
+        ),
+    ],
+    query: Annotated[
+        str, Field(description="DuckDB SQL query against table output")
+    ],
+) -> str:
+    """Run a DuckDB SQL query against a single NRDS output file.
+
+    Drives the ``query_output_file`` tool. The arg name ``s3_url`` is
+    surfaced as-is on the prompt (it mirrors the underlying tool's arg
+    name per the parity contract); the description is the user-friendly
+    explanation.
+    """
+    return (
+        f"Run the DuckDB SQL query {query} against the output file at "
+        f"{s3_url}."
+    )
+
+
+@mcp.prompt
+def resolve_file_by_index(
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    forecast: Annotated[
+        str,
+        Field(description="short_range / medium_range / analysis_assim_extend"),
+    ],
+    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
+    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+    index: Annotated[str, Field(description="0-based output index, e.g., 0")],
+) -> str:
+    """Resolve a single output file by index in the sorted output-file list.
+
+    Drives the ``resolve_output_file`` tool. The XOR constraint on
+    ``resolve_output_file`` (file_name XOR index) is resolved at the
+    slash level — this variant supplies ``index`` and the LLM should NOT
+    also supply ``file_name``. ``index`` defaults to 0 on the underlying
+    tool but is surfaced as required on the prompt per plan R6.
+    """
+    return (
+        f"Resolve the output file by index {index} for the {model} model "
+        f"on {date}, {forecast} forecast, cycle {cycle}, vpu {vpu}. "
+        f"Do NOT also supply file_name."
+    )
+
+
+@mcp.prompt
+def resolve_file_by_name(
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    forecast: Annotated[
+        str,
+        Field(description="short_range / medium_range / analysis_assim_extend"),
+    ],
+    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
+    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+    file_name: Annotated[
+        str, Field(description="Exact filename (e.g. troute_output_...parquet)")
+    ],
+) -> str:
+    """Resolve a single output file by exact filename.
+
+    Drives the ``resolve_output_file`` tool. The XOR constraint on
+    ``resolve_output_file`` (file_name XOR index) is resolved at the
+    slash level — this variant supplies ``file_name`` and the LLM should
+    NOT also supply ``index``. The underlying tool's ``index`` defaults
+    to 0 (not None), so explicitly passing both file_name and index would
+    fail the XOR check; the docstring instruction tells the LLM to omit
+    index in this variant.
+    """
+    return (
+        f"Resolve the output file by exact filename {file_name} for the "
+        f"{model} model on {date}, {forecast} forecast, cycle {cycle}, "
+        f"vpu {vpu}. Do NOT also supply index."
+    )
+
+
 def _parse_allowed_origins() -> List[str]:
     """Read ALLOWED_ORIGINS from env (comma-separated). Defaults to wildcard.
 
