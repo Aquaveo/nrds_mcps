@@ -799,10 +799,12 @@ def plot_timeseries(
     selector tool's schema.
     """
     return (
-        f"Retrieve a line chart of the time series for variable {variable} "
+        f"Retrieve a line chart plotting the {variable} time series "
         f"for feature id {feature_id} for output index {index} for the "
         f"{forecast} forecast on {model} model and date {date}, "
-        f"cycle {cycle}, and vpu {vpu}"
+        f"cycle {cycle}, and vpu {vpu}. "
+        f"Use a query like: SELECT time, {variable} FROM output "
+        f"WHERE feature_id = {feature_id}"
     )
 
 

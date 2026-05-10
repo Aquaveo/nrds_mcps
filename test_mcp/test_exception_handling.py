@@ -291,6 +291,136 @@ def test_get_output_file_negative_index_fails_before_s3_call(monkeypatch):
     )
 
 
+# ---------------------------------------------------------------------------
+# LLM-supplied SQL error handling — invalid_query envelope with column list
+# ---------------------------------------------------------------------------
+
+
+def test_extract_duckdb_candidates_pulls_columns_from_message():
+    """Pulls 'output.feature_id', 'output.velocity' from a BinderException
+    message and normalizes them to bare column names.
+    """
+    from nextgen_mcp.utils_rest import _extract_duckdb_candidates
+
+    msg = (
+        'Binder Error: Referenced column "variable" not found in FROM clause!\n'
+        'Candidate bindings: "output.feature_id", "output.velocity"'
+    )
+    cols = _extract_duckdb_candidates(msg)
+    assert cols == ["feature_id", "velocity"]
+
+
+def test_extract_duckdb_candidates_handles_bare_names():
+    """Column candidates without table qualifier are kept as-is."""
+    from nextgen_mcp.utils_rest import _extract_duckdb_candidates
+
+    msg = 'Binder Error: ...\nCandidate bindings: "time", "flow"'
+    cols = _extract_duckdb_candidates(msg)
+    assert cols == ["time", "flow"]
+
+
+def test_extract_duckdb_candidates_returns_empty_on_no_match():
+    """If the message has no Candidate bindings clause, returns []."""
+    from nextgen_mcp.utils_rest import _extract_duckdb_candidates
+
+    assert _extract_duckdb_candidates("some other error") == []
+
+
+def test_classify_llm_sql_error_binder_returns_invalid_query_with_columns():
+    """BinderException -> code=invalid_query with available_columns extracted."""
+    import duckdb
+
+    from nextgen_mcp.utils_rest import _classify_llm_sql_error
+
+    exc = duckdb.BinderException(
+        'Referenced column "variable" not found in FROM clause!\n'
+        'Candidate bindings: "output.feature_id", "output.velocity"'
+    )
+    code, msg, fix_hint, cols = _classify_llm_sql_error(
+        exc, "s3://x/y.parquet", "SELECT * WHERE variable = 'velocity'"
+    )
+    assert code == "invalid_query"
+    assert "does not exist" in msg
+    assert "feature_id" in fix_hint and "velocity" in fix_hint
+    assert "retry once" in fix_hint.lower()
+    assert cols == ["feature_id", "velocity"]
+
+
+def test_classify_llm_sql_error_parser_returns_invalid_query():
+    """ParserException -> code=invalid_query with sql-syntax fix_hint."""
+    import duckdb
+
+    from nextgen_mcp.utils_rest import _classify_llm_sql_error
+
+    exc = duckdb.ParserException("syntax error at end of input")
+    code, msg, fix_hint, cols = _classify_llm_sql_error(
+        exc, "s3://x/y.parquet", "SELEC * FROM"
+    )
+    assert code == "invalid_query"
+    assert "syntax" in msg.lower() or "valid" in msg.lower()
+    assert "single SELECT" in fix_hint
+    assert cols == []
+
+
+def test_classify_llm_sql_error_catalog_returns_invalid_query():
+    """CatalogException -> code=invalid_query with table-not-found fix_hint."""
+    import duckdb
+
+    from nextgen_mcp.utils_rest import _classify_llm_sql_error
+
+    exc = duckdb.CatalogException("Table 'bogus' does not exist")
+    code, _, fix_hint, _ = _classify_llm_sql_error(
+        exc, "s3://x/y.parquet", "SELECT * FROM bogus"
+    )
+    assert code == "invalid_query"
+    assert "FROM output" in fix_hint
+
+
+def test_classify_llm_sql_error_falls_back_for_non_programmer_errors():
+    """A generic OSError on the LLM-SQL path falls back to _classify_io_error
+    behavior so callers still get a typed result.
+    """
+    from nextgen_mcp.utils_rest import _classify_llm_sql_error
+
+    code, msg, fix_hint, cols = _classify_llm_sql_error(
+        TimeoutError("upstream"), "s3://x/y.parquet", "SELECT 1"
+    )
+    assert code == "timeout"
+    assert cols == []
+
+
+def test_query_output_file_returns_envelope_on_binder_exception(monkeypatch):
+    """Integration: when DuckDB raises BinderException against an LLM-supplied
+    query, the tool returns a structured envelope with available_columns +
+    fix_hint instead of letting the exception bubble.
+
+    This is the recovery path qwen needed in the 2026-05-10 bug — the LLM
+    gets the actual column list and can rewrite its query in one retry.
+    """
+    import duckdb
+
+    from nextgen_mcp import rest, utils_rest
+
+    def _raise_binder(file_url, query):
+        raise duckdb.BinderException(
+            'Referenced column "variable" not found in FROM clause!\n'
+            'Candidate bindings: "output.feature_id", "output.velocity"'
+        )
+
+    monkeypatch.setattr(utils_rest, "_duckdb_query_parquet", _raise_binder)
+    monkeypatch.setattr(rest, "_duckdb_query_parquet", _raise_binder)
+
+    result = rest.query_output_file(
+        s3_url="s3://ciroh-community-ngen-datastream/outputs/x/y.parquet",
+        query="SELECT * FROM output WHERE variable = 'velocity'",
+    )
+    assert result.get("ok") is False
+    assert result["error"]["code"] == "invalid_query"
+    assert result["available_columns"] == ["feature_id", "velocity"]
+    assert "feature_id" in result["fix_hint"]
+    assert "retry once" in result["fix_hint"].lower()
+
+
 def test_get_output_file_oversize_index_still_requires_s3(monkeypatch):
     """An oversize index (e.g. 999) still needs fs.ls to compare against
     len(items) — that upper-bound check stays after IO (documented in plan).

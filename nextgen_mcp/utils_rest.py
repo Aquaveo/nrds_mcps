@@ -99,11 +99,19 @@ def _classify_io_error(exc: BaseException) -> tuple[str, str, str]:
 
 
 def _is_duckdb_programmer_error(exc: BaseException) -> bool:
-    """True if exc is a DuckDB SQL programmer-error class that must NOT be caught.
+    """True if exc is a DuckDB SQL programmer-error class that must NOT be
+    caught when the SQL was hardcoded by us.
 
-    Wrong-column / malformed-SQL / missing-table errors should crash visibly
-    so they're discoverable in observability logs, not normalized to a polite
-    envelope that lets the LLM retry the same broken query forever.
+    Wrong-column / malformed-SQL / missing-table errors in OUR hardcoded
+    SQL should crash visibly so they're discoverable in observability logs,
+    not normalized to a polite envelope. CRITICAL: this guard applies ONLY
+    to hardcoded-SQL call sites (e.g. _duckdb_query_hydrofabric_parquet,
+    _duckdb_lookup_hydrofabric_feature).
+
+    For LLM-supplied-SQL call sites (query_output_file's `query` arg), use
+    ``_classify_llm_sql_error`` instead — the LLM CAN recover from these
+    if given a structured envelope with the column list as fix_hint, the
+    same pattern InputValidationEnvelopeMiddleware uses for kwarg errors.
     """
     return isinstance(
         exc,
@@ -113,6 +121,109 @@ def _is_duckdb_programmer_error(exc: BaseException) -> bool:
             duckdb.CatalogException,
         ),
     )
+
+
+# Regex to pull DuckDB's "Candidate bindings:" column suggestions out of
+# a BinderException message. Format observed:
+#     Binder Error: Referenced column "X" not found in FROM clause!
+#     Candidate bindings: "output.feature_id", "output.velocity"
+# The strip after the dot is to normalize "output.velocity" -> "velocity".
+_DUCKDB_CANDIDATES_RE = re.compile(
+    r'Candidate bindings:\s*(.+?)(?:\n|$)', re.IGNORECASE
+)
+
+
+def _extract_duckdb_candidates(exc_message: str) -> list[str]:
+    """Pull the candidate column names out of a DuckDB BinderException message.
+
+    Returns ``[]`` if no candidate-bindings clause is found (e.g., the error
+    is ParserException, or the message format changed in a future DuckDB
+    version). Callers should handle the empty case as "we don't know the
+    columns; fix_hint can't list them."
+    """
+    match = _DUCKDB_CANDIDATES_RE.search(exc_message)
+    if not match:
+        return []
+    raw = match.group(1)
+    # raw looks like: '"output.feature_id", "output.velocity"'
+    parts = re.findall(r'"([^"]+)"', raw)
+    columns: list[str] = []
+    for part in parts:
+        # Strip leading table-qualifier: "output.velocity" -> "velocity"
+        # Keep the original if there's no dot.
+        bare = part.rsplit(".", 1)[-1] if "." in part else part
+        if bare and bare not in columns:
+            columns.append(bare)
+    return columns
+
+
+def _classify_llm_sql_error(
+    exc: BaseException, file_url: str, query: str
+) -> tuple[str, str, str, list[str]]:
+    """Return (error_code, sanitized_message, fix_hint, available_columns)
+    for a DuckDB programmer-error class fired against LLM-supplied SQL.
+
+    The LLM-facing envelope from this classifier is the SQL analogue of
+    InputValidationEnvelopeMiddleware's `invalid_args` envelope: it gives
+    the LLM a structured way to recover in one retry instead of stalling
+    in a thinking loop (as observed with qwen on 2026-05-10).
+
+    Callers must use this AT LLM-supplied-SQL call sites only (currently
+    ``query_output_file`` in rest.py). For hardcoded-SQL paths, use the
+    existing ``_is_duckdb_programmer_error`` re-raise guard instead.
+    """
+    exc_msg = str(exc)
+    if isinstance(exc, duckdb.BinderException):
+        columns = _extract_duckdb_candidates(exc_msg)
+        if columns:
+            column_list = ", ".join(columns)
+            fix_hint = (
+                f"The query references a column that does not exist in the "
+                f"output file. The actual columns are: {column_list}. "
+                f"Rewrite the query using one of these column names and "
+                f"retry once."
+            )
+        else:
+            fix_hint = (
+                "The query references a column that does not exist in the "
+                "output file. Rewrite the query using only the columns "
+                "documented for this output kind, or check what's available "
+                "by running a probe query like SELECT * FROM output LIMIT 1, "
+                "and retry once."
+            )
+        return (
+            "invalid_query",
+            "Query references a column that does not exist in the output file.",
+            fix_hint,
+            columns,
+        )
+    if isinstance(exc, duckdb.ParserException):
+        return (
+            "invalid_query",
+            "Query is not valid SQL syntax.",
+            (
+                "The query is not valid DuckDB SQL. Common causes: missing "
+                "comma, unbalanced parenthesis, wrong keyword order. Rewrite "
+                "as a single SELECT statement against the `output` table and "
+                "retry once."
+            ),
+            [],
+        )
+    if isinstance(exc, duckdb.CatalogException):
+        return (
+            "invalid_query",
+            "Query references a missing table.",
+            (
+                "The query references a table that does not exist. The only "
+                "queryable table in this context is `output`. Rewrite the "
+                "FROM clause to `FROM output` and retry once."
+            ),
+            [],
+        )
+    # Other duckdb.Error subclasses or non-duckdb classes: fall back to
+    # the generic IO classifier so callers always get a typed result.
+    code, msg, fix_hint = _classify_io_error(exc)
+    return code, msg, fix_hint, []
 from shapely import wkb, wkt
 from shapely.geometry import shape
 import plotly.express as px

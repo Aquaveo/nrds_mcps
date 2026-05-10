@@ -33,6 +33,7 @@ from .utils_rest import (
     _normalize_output_file_url,
     _classify_io_error,
     _is_duckdb_programmer_error,
+    _classify_llm_sql_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -564,6 +565,34 @@ def query_output_file(s3_url, query) -> Dict:
             data=df.to_dict(orient="records"),
         )
 
+    except (duckdb.BinderException, duckdb.ParserException, duckdb.CatalogException) as e:
+        # LLM-supplied SQL programmer error. Unlike the hardcoded-SQL
+        # paths (which re-raise via _is_duckdb_programmer_error), these
+        # errors are RECOVERABLE if the LLM gets a structured envelope
+        # with the available column list as fix_hint — same shape as the
+        # input-validation middleware's invalid_args response. Observed
+        # 2026-05-10: qwen stalled on a BinderException when this re-raised
+        # as a protocol error; with the structured envelope below the
+        # LLM has the actual column candidates and can retry in one turn.
+        code, msg, fix_hint, available_columns = _classify_llm_sql_error(
+            e, file_url, query
+        )
+        logger.warning(
+            "LLM SQL error %s on %s file %s: %s",
+            type(e).__name__,
+            kind,
+            file_url,
+            e,
+        )
+        return _error_payload(
+            code,
+            msg,
+            fix_hint=fix_hint,
+            file=file_url,
+            file_type=kind,
+            query=query,
+            available_columns=available_columns,
+        )
     except (OSError, ClientError, duckdb.Error) as e:
         if _is_duckdb_programmer_error(e):
             raise
