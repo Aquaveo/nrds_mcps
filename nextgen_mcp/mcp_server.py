@@ -792,6 +792,127 @@ def plot_timeseries(
     )
 
 
+# ---------------------------------------------------------------------------
+# Discovery prompt templates (Phase 2a) — one per list_available_* tool plus
+# a zero-arg list_models entry.
+#
+# Pattern mirrors plot_timeseries above:
+#   - Argument names mirror the underlying tool's argument names exactly.
+#   - Each routing arg is required:true on the prompt (per plan R6, even
+#     when the underlying tool would default; editors should be explicit
+#     about routing decisions when invoking a slash command).
+#   - Hint copy is drawn from canonical Literal types in validations.py
+#     (MODELS, FORECASTS, DATE_PATTERN). LOCKSTEP RULE: when validations.py
+#     adds a new model, forecast, or vpu format, update both the tool's
+#     Field(description=...) AND the @mcp.prompt arg description here.
+#   - Prose is imperative declarative ("List the available …"); verb-first
+#     matches the underlying tool-name verb and gives small models a clean
+#     syntactic anchor.
+# ---------------------------------------------------------------------------
+
+
+@mcp.prompt
+def list_models() -> str:
+    """List the available NRDS models.
+
+    Drives the ``list_available_models`` tool. Zero-arg by design — the
+    underlying tool takes no arguments. FastMCP 3.2.4 silently ignores
+    extra kwargs on no-arg prompts (test pinned).
+    """
+    return "List the available NRDS models."
+
+
+@mcp.prompt
+def list_dates(
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+) -> str:
+    """List the available dates for a given NRDS model.
+
+    Drives the ``list_available_dates`` tool. The tool's truly-required
+    arg is only ``model``; this prompt surfaces just that.
+    """
+    return f"List the available dates for the {model} model."
+
+
+@mcp.prompt
+def list_forecasts(
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    date: Annotated[str, Field(description="yyyy-mm-dd")],
+) -> str:
+    """List the available forecasts for a given NRDS model and date.
+
+    Drives the ``list_available_forecasts`` tool. ``date`` is defaultable
+    in the tool (server-side defaults to today via ``_parse_date_or_today``)
+    but is surfaced as required on the prompt per plan R6 — editors
+    should be explicit about routing.
+    """
+    return f"List the available forecasts for the {model} model on {date}."
+
+
+@mcp.prompt
+def list_cycles(
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    forecast: Annotated[
+        str, Field(description="short_range / medium_range / analysis_assim_extend")
+    ],
+) -> str:
+    """List the available cycles for a given NRDS model, date, and forecast.
+
+    Drives the ``list_available_cycles`` tool. ``date`` is defaultable in
+    the tool but surfaced as required here per plan R6.
+    """
+    return (
+        f"List the available cycles for the {model} model on {date}, "
+        f"{forecast} forecast."
+    )
+
+
+@mcp.prompt
+def list_vpus(
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    forecast: Annotated[
+        str, Field(description="short_range / medium_range / analysis_assim_extend")
+    ],
+    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
+) -> str:
+    """List the available VPUs for a given NRDS model, date, forecast, and cycle.
+
+    Drives the ``list_available_vpus`` tool. ``date`` and ``cycle`` are
+    defaultable in the tool but surfaced as required here per plan R6.
+    """
+    return (
+        f"List the available VPUs for the {model} model on {date}, "
+        f"{forecast} forecast, cycle {cycle}."
+    )
+
+
+@mcp.prompt
+def list_output_files(
+    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    forecast: Annotated[
+        str, Field(description="short_range / medium_range / analysis_assim_extend")
+    ],
+    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
+    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+) -> str:
+    """List the available output files for a given NRDS model, date, forecast,
+    cycle, and VPU.
+
+    Drives the ``list_available_output_files`` tool. ``date`` and ``cycle``
+    are defaultable in the tool but surfaced as required here per plan R6.
+    The optional ``ensemble`` arg is intentionally not surfaced — only
+    required-shaped routing args appear on the prompt (see plan Scope
+    Boundaries: "No optional-argument hint surfaces").
+    """
+    return (
+        f"List the available output files for the {model} model on {date}, "
+        f"{forecast} forecast, cycle {cycle}, vpu {vpu}."
+    )
+
+
 def _parse_allowed_origins() -> List[str]:
     """Read ALLOWED_ORIGINS from env (comma-separated). Defaults to wildcard.
 
