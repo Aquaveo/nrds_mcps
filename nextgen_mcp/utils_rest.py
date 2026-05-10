@@ -9,6 +9,110 @@ import duckdb
 import xarray as xr
 
 from ._io_config import duckdb_connect_with_httpfs, open_fsspec_file
+
+
+# Per-code sanitized message + fix_hint. NEVER use str(exc) directly — the
+# raw message from botocore.ClientError often embeds AWS account IDs, S3
+# bucket names, ARNs, and request IDs; from duckdb.IOException it can
+# embed full presigned URLs. The LLM-facing envelope sees the sanitized
+# message only; the full str(exc) is logged at WARNING+ for operators.
+_IO_ERROR_CATALOG = {
+    "timeout": (
+        "Upstream request timed out.",
+        "Upstream timed out. Retry the same call once; if it fails again, "
+        "surface the error to the user and try a different selector "
+        "(e.g., a different date or forecast cycle).",
+    ),
+    "permission_denied": (
+        "Access denied to the upstream data store.",
+        "Access denied to the upstream data store. Do NOT retry — this is "
+        "a deployment configuration issue. Surface to the user as a "
+        "server-side problem.",
+    ),
+    "upstream_error": (
+        "Upstream data store error.",
+        "Upstream data store error. Do NOT retry the same call — try a "
+        "different selector combination (model/date/forecast/vpu) before "
+        "reporting failure to the user.",
+    ),
+    "not_found": (
+        "Requested resource was not found.",
+        "Requested resource was not found. Do NOT retry the same call — "
+        "the selector combination does not match any available data. Try "
+        "a different selector or check what's available via the "
+        "corresponding list_* tool.",
+    ),
+    "execution_error": (
+        "Internal execution error.",
+        "Internal execution error. Do NOT retry — surface to the user. If "
+        "reproducible, this is a server-side bug.",
+    ),
+}
+
+
+def _classify_io_error(exc: BaseException) -> tuple[str, str, str]:
+    """Return (error_code, sanitized_message, fix_hint) for any caught IO exception.
+
+    Maps the raised exception class to a stable error code and per-code
+    sanitized text. The raw ``str(exc)`` is intentionally NOT propagated
+    into the LLM-facing envelope — see _IO_ERROR_CATALOG for the rationale.
+
+    Programmer-error DuckDB classes (BinderException, ParserException,
+    CatalogException) MUST be re-raised before reaching this helper —
+    classifying them as execution_error would mask wrong-column / malformed
+    -SQL / missing-table bugs and let an LLM retry forever. Callers should
+    check ``isinstance(exc, (duckdb.BinderException, duckdb.ParserException,
+    duckdb.CatalogException))`` and re-raise before calling this function.
+    """
+    from botocore.exceptions import ClientError
+
+    code: str
+    if isinstance(exc, TimeoutError):
+        code = "timeout"
+    elif isinstance(exc, PermissionError):
+        code = "permission_denied"
+    elif isinstance(exc, FileNotFoundError):
+        code = "not_found"
+    elif isinstance(exc, ClientError):
+        # Inspect the AWS error code for AccessDenied / NoSuchKey
+        aws_code = exc.response.get("Error", {}).get("Code", "")
+        if aws_code in ("AccessDenied", "403"):
+            code = "permission_denied"
+        elif aws_code in ("NoSuchKey", "NoSuchBucket", "404"):
+            code = "not_found"
+        else:
+            code = "upstream_error"
+    elif isinstance(exc, duckdb.IOException):
+        code = "upstream_error"
+    elif isinstance(exc, ConnectionError):
+        code = "upstream_error"
+    elif isinstance(exc, OSError):
+        # OSError parent covers many filesystem/network classes not pinned above.
+        # Default to upstream_error for these; if a more specific case
+        # emerges in production, branch here.
+        code = "upstream_error"
+    else:
+        code = "execution_error"
+
+    message, fix_hint = _IO_ERROR_CATALOG[code]
+    return code, message, fix_hint
+
+
+def _is_duckdb_programmer_error(exc: BaseException) -> bool:
+    """True if exc is a DuckDB SQL programmer-error class that must NOT be caught.
+
+    Wrong-column / malformed-SQL / missing-table errors should crash visibly
+    so they're discoverable in observability logs, not normalized to a polite
+    envelope that lets the LLM retry the same broken query forever.
+    """
+    return isinstance(
+        exc,
+        (
+            duckdb.BinderException,
+            duckdb.ParserException,
+            duckdb.CatalogException,
+        ),
+    )
 from shapely import wkb, wkt
 from shapely.geometry import shape
 import plotly.express as px
