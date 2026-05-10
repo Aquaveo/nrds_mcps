@@ -23,7 +23,6 @@ from typing import Any, Optional
 
 import duckdb
 import fsspec
-from botocore.client import Config
 
 logger = logging.getLogger(__name__)
 
@@ -55,19 +54,25 @@ def _read_timeout_env() -> int:
 HTTP_TIMEOUT_SECONDS: int = _read_timeout_env()
 
 
-def _boto_client_kwargs() -> dict:
-    """Build client_kwargs for fsspec("s3", ...) with timeouts and no retries.
+def _s3fs_config_kwargs() -> dict:
+    """Build config_kwargs for s3fs / fsspec("s3", ...) — passed directly
+    to botocore.client.Config(...) by s3fs.
+
+    Cannot use ``client_kwargs={"config": Config(...)}`` because s3fs
+    already passes a `config=` kwarg internally to
+    `session.create_client(...)`; supplying our own collides with
+    `TypeError: got multiple values for keyword argument 'config'`.
+
+    ``config_kwargs`` is the s3fs-supported alternative.
 
     Disabling retries (``max_attempts=1``) ensures the per-request budget
     isn't multiplied by the default 3 retry attempts — a 60s timeout means
     60s, not potentially 180s.
     """
     return {
-        "config": Config(
-            connect_timeout=HTTP_TIMEOUT_SECONDS,
-            read_timeout=HTTP_TIMEOUT_SECONDS,
-            retries={"max_attempts": 1},
-        )
+        "connect_timeout": HTTP_TIMEOUT_SECONDS,
+        "read_timeout": HTTP_TIMEOUT_SECONDS,
+        "retries": {"max_attempts": 1},
     }
 
 
@@ -76,7 +81,7 @@ def s3_filesystem() -> Any:
 
     ``skip_instance_cache=True`` is load-bearing: fsspec caches filesystem
     instances by args-hash; if any prior code path called
-    ``fsspec.filesystem("s3", anon=True)`` without client_kwargs, that
+    ``fsspec.filesystem("s3", anon=True)`` without config_kwargs, that
     instance would be returned for subsequent timeout-configured calls,
     silently dropping the config. Per-call instantiation guarantees the
     timeout reaches the underlying transport.
@@ -84,7 +89,7 @@ def s3_filesystem() -> Any:
     return fsspec.filesystem(
         "s3",
         anon=True,
-        client_kwargs=_boto_client_kwargs(),
+        config_kwargs=_s3fs_config_kwargs(),
         skip_instance_cache=True,
     )
 
@@ -123,5 +128,5 @@ def open_fsspec_file(url: str, mode: str = "rb"):
         url,
         mode=mode,
         anon=True,
-        client_kwargs=_boto_client_kwargs(),
+        config_kwargs=_s3fs_config_kwargs(),
     )

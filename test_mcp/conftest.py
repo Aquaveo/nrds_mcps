@@ -79,6 +79,27 @@ def mock_fsspec_not_found(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture
+def mock_fsspec_empty_ls(monkeypatch: pytest.MonkeyPatch):
+    """fs.ls returns []. Useful when a test needs the IO call to succeed
+    (so the surrounding code runs) but shouldn't hit live S3.
+    """
+    from nextgen_mcp import _io_config, rest
+
+    class _OkFS:
+        def ls(self, *args, **kwargs):
+            return []
+
+        def exists(self, *args, **kwargs):
+            return False
+
+    def _factory():
+        return _OkFS()
+
+    monkeypatch.setattr(_io_config, "s3_filesystem", _factory)
+    monkeypatch.setattr(rest, "s3_filesystem", _factory)
+
+
+@pytest.fixture
 def mock_fsspec_botocore_client_error(monkeypatch: pytest.MonkeyPatch):
     """fs.ls raises botocore.exceptions.ClientError — simulates an AWS API error."""
     from botocore.exceptions import ClientError

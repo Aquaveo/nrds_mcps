@@ -63,18 +63,22 @@ def test_non_integer_falls_back_to_default(
 # ---------------------------------------------------------------------------
 
 
-def test_boto_client_kwargs_carries_timeouts_and_no_retries(
+def test_s3fs_config_kwargs_carries_timeouts_and_no_retries(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """config_kwargs (not client_kwargs={'config': Config(...)}) is the right
+    shape — s3fs already passes a config kwarg internally, so layering ours
+    on top causes 'got multiple values for keyword argument config'.
+    config_kwargs is passed by s3fs directly to botocore Config(...).
+    """
     monkeypatch.setenv("NRDS_HTTP_TIMEOUT_SECONDS", "20")
     cfg = _reload_io_config()
-    kwargs = cfg._boto_client_kwargs()
+    kwargs = cfg._s3fs_config_kwargs()
 
-    boto_config = kwargs["config"]
-    assert boto_config.connect_timeout == 20
-    assert boto_config.read_timeout == 20
+    assert kwargs["connect_timeout"] == 20
+    assert kwargs["read_timeout"] == 20
     # Retries disabled so the per-request budget isn't multiplied by 3
-    assert boto_config.retries == {"max_attempts": 1}
+    assert kwargs["retries"] == {"max_attempts": 1}
 
 
 # ---------------------------------------------------------------------------

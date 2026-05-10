@@ -24,8 +24,22 @@ from .validations import (
     FORECASTS,
     MODELS
 )
+from ._input_validation_middleware import InputValidationEnvelopeMiddleware
+from ._observability_middleware import ToolCallObservabilityMiddleware
 
-mcp = FastMCP("NRDS MCP Server")
+# Middleware order:
+#   - ToolCallObservabilityMiddleware OUTERMOST so it observes the final
+#     envelope after validation middleware has converted ValidationError
+#     to a structured tool result.
+#   - InputValidationEnvelopeMiddleware INNER so it catches pydantic
+#     ValidationError before it bubbles out.
+mcp = FastMCP(
+    "NRDS MCP Server",
+    middleware=[
+        ToolCallObservabilityMiddleware(),
+        InputValidationEnvelopeMiddleware(),
+    ],
+)
 LOGGER = logging.getLogger("nextgen_mcp.mcp_server")
 
 
