@@ -2,8 +2,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import json
-import ast
-import re   
+import re
 import pandas as pd
 import duckdb
 import xarray as xr
@@ -224,10 +223,7 @@ def _classify_llm_sql_error(
     # the generic IO classifier so callers always get a typed result.
     code, msg, fix_hint = _classify_io_error(exc)
     return code, msg, fix_hint, []
-from shapely import wkb, wkt
-from shapely.geometry import shape
-import plotly.express as px
-from plotly.utils import PlotlyJSONEncoder
+
 
 HYDROFABRIC_INDEX_URL = (
     "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/hydrofabric_index.parquet"
@@ -339,48 +335,6 @@ def _list_payload(key: str, items: list, *, path: str) -> Dict[str, Any]:
         **{key: items},
     )
 
-def _create_plotly_chart(
-    df: pd.DataFrame,
-    title: str,
-) -> Dict[str, Any]:
-
-    columns = df.columns.tolist()
-    if len(columns) < 2:
-        return {
-            "error": (
-                "Chart query must return at least two columns, including "
-                "'time' and one metric column such as flow, velocity, depth, or nudge."
-            )
-        }
-
-    if "time" not in columns:
-        return {
-            "error": (
-                "Chart query must return a 'time' column and one metric column "
-                "such as flow, velocity, depth, or nudge."
-            )
-        }
-
-    try:
-        x, y = _auto_pick_axes(columns)
-    except ValueError as e:
-        return {
-            "error": (
-                "Chart query must return a 'time' column and at least one additional "
-                "metric column such as flow, velocity, depth, or nudge."
-            )
-        }
-
-    fig = px.line(
-        df,
-        x=x,
-        y=y,
-        title=title,
-    )
-
-    fig.update_layout(template="plotly_white")
-    return json.loads(json.dumps(fig.to_plotly_json(), cls=PlotlyJSONEncoder))
-
 def validate_output_sql(query: str) -> str:
     """
     Validate a DuckDB query for output-file tools.
@@ -428,19 +382,6 @@ def _get_feature_center(row: Dict[str, Any]) -> Optional[list]:
         return [float(lake_x), float(lake_y)]
 
     return None
-
-def _pick_filter_value(row: Dict[str, Any], id_property: str, requested_id: str) -> str:
-    value = row.get(id_property)
-    if value not in (None, ""):
-        return str(value)
-
-    if row.get("divide_id") not in (None, ""):
-        return str(row["divide_id"])
-
-    if row.get("id") not in (None, ""):
-        return str(row["id"])
-
-    return str(requested_id)
 
 def _duckdb_lookup_hydrofabric_feature(hydrofabric_id: str) -> pd.DataFrame:
     con = duckdb_connect_with_httpfs()
@@ -495,117 +436,6 @@ def _duckdb_lookup_hydrofabric_feature(hydrofabric_id: str) -> pd.DataFrame:
             con.close()
         except Exception:
             pass
-
-def _load_geometry(value):
-    if value is None:
-        return None
-
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return wkb.loads(bytes(value))
-
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        if text.startswith("{"):
-            return shape(json.loads(text))
-        return wkt.loads(text)
-
-    return value
-
-def _lookup_flowpath_view(feature_id: str) -> dict:
-    con = duckdb_connect_with_httpfs()
-
-    row = con.execute(
-        """
-        SELECT *
-        FROM read_parquet(?)
-        WHERE id = ?
-        LIMIT 1
-        """,
-        [HYDROFABRIC_INDEX_URL, feature_id],
-    ).fetchone()
-
-    if not row:
-        return {"bbox": None, "center": None, "zoom": None}
-
-    geom = _load_geometry(row[1])
-    if geom is None:
-        return {"bbox": None, "center": None, "zoom": None}
-
-    minx, miny, maxx, maxy = geom.bounds
-    center = [(minx + maxx) / 2.0, (miny + maxy) / 2.0]
-
-    return {
-        "bbox": [[minx, miny], [maxx, maxy]],
-        "center": center,
-        "zoom": 12,
-    }
-
-def _strip_markdown_code_fence(text: str) -> str:
-    s = (text or "").strip()
-    if not s.startswith("```"):
-        return s
-
-    lines = s.splitlines()
-    if lines and lines[0].lstrip().startswith("```"):
-        lines = lines[1:]
-    if lines and lines[-1].strip() == "```":
-        lines = lines[:-1]
-    return "\n".join(lines).strip()
-
-def _extract_first_json_object(text: str) -> Dict[str, Any] | None:
-    decoder = json.JSONDecoder()
-    for i, ch in enumerate(text):
-        if ch != "{":
-            continue
-        try:
-            obj, _ = decoder.raw_decode(text[i:])
-        except Exception:
-            continue
-        if isinstance(obj, dict):
-            return obj
-    return None
-
-def _parse_query_result_payload(query_result: Dict[str, Any] | str) -> Dict[str, Any]:
-    if isinstance(query_result, dict):
-        return query_result
-    if isinstance(query_result, str):
-        s = _strip_markdown_code_fence(query_result)
-        if not s:
-            raise ValueError("query_result string is empty.")
-
-        try:
-            payload = json.loads(s)
-            if isinstance(payload, dict):
-                return payload
-        except Exception:
-            payload = None
-
-        payload = _extract_first_json_object(s)
-        if isinstance(payload, dict):
-            return payload
-
-        try:
-            payload = ast.literal_eval(s)
-            if isinstance(payload, dict):
-                return payload
-        except Exception:
-            pass
-
-    raise ValueError("query_result must be a JSON object or JSON object string.")
-
-def _auto_pick_axes(columns: List[str]) -> tuple[str, str]:
-    if not columns:
-        raise ValueError("No columns available to infer x/y axes.")
-
-    picked_x = next((col for col in columns if "time" in col.lower()), None)
-    picked_y = next((col for col in columns if col != picked_x and col != "feature_id"), None)
-    if not picked_y:
-        raise ValueError("Could not infer a y-axis column different from x-axis and 'feature_id'.")
-    if not picked_x:
-        raise ValueError("Could not infer an x-axis column.")
-    return (picked_x, picked_y)
 
 def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
     """Load the t-route crosswalk DataFrame.
