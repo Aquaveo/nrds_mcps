@@ -7,7 +7,7 @@ import pandas as pd
 import duckdb
 import xarray as xr
 
-from ._io_config import duckdb_connect_with_httpfs, open_fsspec_file
+from ._io_config import HYDROFABRIC_INDEX_URL, duckdb_connect_with_httpfs, open_fsspec_file
 
 
 # Per-code sanitized message + fix_hint. NEVER use str(exc) directly — the
@@ -225,9 +225,6 @@ def _classify_llm_sql_error(
     return code, msg, fix_hint, []
 
 
-HYDROFABRIC_INDEX_URL = (
-    "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/hydrofabric_index.parquet"
-)
 _OUTPUT_SQL_START_RE = re.compile(r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b)")
 _OUTPUT_SQL_FROM_OUTPUT_RE = re.compile(r"(?is)\bFROM\s+output\b")
 _OUTPUT_SQL_FORBIDDEN_RE = re.compile(

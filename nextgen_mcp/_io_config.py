@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SECONDS = 60
 
+# Hydrofabric index parquet — the canonical lookup table for flowpath /
+# divide / etc. feature metadata. Single source of truth here so the
+# rest-shim and the utils_rest helpers stay in sync.
+HYDROFABRIC_INDEX_URL = (
+    "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/hydrofabric_index.parquet"
+)
+
 
 def _read_timeout_env() -> int:
     """Read NRDS_HTTP_TIMEOUT_SECONDS with a <=0 guard and parse-error fallback."""

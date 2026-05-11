@@ -21,8 +21,13 @@ from .utils import (
     _date_from_item,
 )
 from .validations import (
+    CYCLE_HINT,
+    DATE_HINT,
+    FORECAST_HINT,
     FORECASTS,
-    MODELS
+    MODEL_HINT,
+    MODELS,
+    VPU_HINT,
 )
 from ._input_validation_middleware import (
     InputValidationEnvelopeMiddleware,
@@ -760,14 +765,14 @@ def lookup_hydrofabric_feature(
 def plot_timeseries(
     variable: Annotated[str, Field(description="flow / velocity / streamflow")],
     feature_id: Annotated[str, Field(description="feature id, e.g., 1019290")],
-    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    model: Annotated[str, Field(description=MODEL_HINT)],
     forecast: Annotated[
         str,
-        Field(description="short_range / medium_range / analysis_assim_extend"),
+        Field(description=FORECAST_HINT),
     ],
-    date: Annotated[str, Field(description="yyyy-mm-dd")],
-    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
-    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+    date: Annotated[str, Field(description=DATE_HINT)],
+    cycle: Annotated[str, Field(description=CYCLE_HINT)],
+    vpu: Annotated[str, Field(description=VPU_HINT)],
     index: Annotated[str, Field(description="0-based output index, e.g., 0")],
 ) -> str:
     """Plot a NRDS output-file timeseries as a line chart.
@@ -845,7 +850,7 @@ def list_models() -> str:
 
 @mcp.prompt
 def list_dates(
-    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
+    model: Annotated[str, Field(description=MODEL_HINT)],
 ) -> str:
     """List the available dates for a given NRDS model.
 
@@ -857,8 +862,8 @@ def list_dates(
 
 @mcp.prompt
 def list_forecasts(
-    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
-    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    model: Annotated[str, Field(description=MODEL_HINT)],
+    date: Annotated[str, Field(description=DATE_HINT)],
 ) -> str:
     """List the available forecasts for a given NRDS model and date.
 
@@ -872,10 +877,10 @@ def list_forecasts(
 
 @mcp.prompt
 def list_cycles(
-    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
-    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    model: Annotated[str, Field(description=MODEL_HINT)],
+    date: Annotated[str, Field(description=DATE_HINT)],
     forecast: Annotated[
-        str, Field(description="short_range / medium_range / analysis_assim_extend")
+        str, Field(description=FORECAST_HINT)
     ],
 ) -> str:
     """List the available cycles for a given NRDS model, date, and forecast.
@@ -891,12 +896,12 @@ def list_cycles(
 
 @mcp.prompt
 def list_vpus(
-    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
-    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    model: Annotated[str, Field(description=MODEL_HINT)],
+    date: Annotated[str, Field(description=DATE_HINT)],
     forecast: Annotated[
-        str, Field(description="short_range / medium_range / analysis_assim_extend")
+        str, Field(description=FORECAST_HINT)
     ],
-    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
+    cycle: Annotated[str, Field(description=CYCLE_HINT)],
 ) -> str:
     """List the available VPUs for a given NRDS model, date, forecast, and cycle.
 
@@ -911,13 +916,13 @@ def list_vpus(
 
 @mcp.prompt
 def list_output_files(
-    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
-    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    model: Annotated[str, Field(description=MODEL_HINT)],
+    date: Annotated[str, Field(description=DATE_HINT)],
     forecast: Annotated[
-        str, Field(description="short_range / medium_range / analysis_assim_extend")
+        str, Field(description=FORECAST_HINT)
     ],
-    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
-    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+    cycle: Annotated[str, Field(description=CYCLE_HINT)],
+    vpu: Annotated[str, Field(description=VPU_HINT)],
 ) -> str:
     """List the available output files for a given NRDS model, date, forecast,
     cycle, and VPU.
@@ -1024,14 +1029,14 @@ def query_by_url(
 
 @mcp.prompt
 def resolve_file_by_index(
-    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
-    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    model: Annotated[str, Field(description=MODEL_HINT)],
+    date: Annotated[str, Field(description=DATE_HINT)],
     forecast: Annotated[
         str,
-        Field(description="short_range / medium_range / analysis_assim_extend"),
+        Field(description=FORECAST_HINT),
     ],
-    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
-    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+    cycle: Annotated[str, Field(description=CYCLE_HINT)],
+    vpu: Annotated[str, Field(description=VPU_HINT)],
     index: Annotated[str, Field(description="0-based output index, e.g., 0")],
 ) -> str:
     """Resolve a single output file by index in the sorted output-file list.
@@ -1051,14 +1056,14 @@ def resolve_file_by_index(
 
 @mcp.prompt
 def resolve_file_by_name(
-    model: Annotated[str, Field(description="cfe_nom / lstm / routing_only")],
-    date: Annotated[str, Field(description="yyyy-mm-dd")],
+    model: Annotated[str, Field(description=MODEL_HINT)],
+    date: Annotated[str, Field(description=DATE_HINT)],
     forecast: Annotated[
         str,
-        Field(description="short_range / medium_range / analysis_assim_extend"),
+        Field(description=FORECAST_HINT),
     ],
-    cycle: Annotated[str, Field(description="00-23, e.g., 00")],
-    vpu: Annotated[str, Field(description="06, VPU_06, or 3W")],
+    cycle: Annotated[str, Field(description=CYCLE_HINT)],
+    vpu: Annotated[str, Field(description=VPU_HINT)],
     file_name: Annotated[
         str, Field(description="Exact filename (e.g. troute_output_...parquet)")
     ],
