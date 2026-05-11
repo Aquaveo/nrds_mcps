@@ -4,7 +4,7 @@ import json
 import logging
 import pandas as pd
 
-from ._io_config import s3_filesystem
+from ._io_config import HYDROFABRIC_INDEX_URL, s3_filesystem
 import duckdb
 from botocore.exceptions import ClientError
 
@@ -43,9 +43,6 @@ BUCKET = os.getenv("BUCKET", "ciroh-community-ngen-datastream")
 OUTPUTS_DIR = "outputs"
 PREFIX_HYDROFABRIC = "v2.2_hydrofabric"
 NGEN_RUN_PREFIX = "ngen-run/outputs/troute"
-HYDROFABRIC_INDEX_URL = (
-    "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/hydrofabric_index.parquet"
-)
 
 
 def _ensure_full_s3_url(path: str) -> str:
