@@ -24,8 +24,25 @@ from .validations import (
     FORECASTS,
     MODELS
 )
+from ._input_validation_middleware import (
+    InputValidationEnvelopeMiddleware,
+    InvalidLLMInputError,
+)
+from ._observability_middleware import ToolCallObservabilityMiddleware
 
-mcp = FastMCP("NRDS MCP Server")
+# Middleware order:
+#   - ToolCallObservabilityMiddleware OUTERMOST so it observes the final
+#     envelope after validation middleware has converted ValidationError
+#     to a structured tool result.
+#   - InputValidationEnvelopeMiddleware INNER so it catches pydantic
+#     ValidationError before it bubbles out.
+mcp = FastMCP(
+    "NRDS MCP Server",
+    middleware=[
+        ToolCallObservabilityMiddleware(),
+        InputValidationEnvelopeMiddleware(),
+    ],
+)
 LOGGER = logging.getLogger("nextgen_mcp.mcp_server")
 
 
@@ -92,7 +109,7 @@ def _validate_date_bounds(d, field_name: str):
             _MIN_ALLOWED_DATE,
             today,
         )
-        raise ValueError(
+        raise InvalidLLMInputError(
             f"'{field_name}' must be between {_MIN_ALLOWED_DATE} and {today} (got {d})"
         )
     return d
@@ -189,7 +206,7 @@ def list_available_dates_tool(
             start_date,
             end_date,
         )
-        raise ValueError(
+        raise InvalidLLMInputError(
             f"'start' must be <= 'end' (got start={start_date}, end={end_date})"
         )
 
@@ -487,7 +504,9 @@ def resolve_output_file_tool(
         LOGGER.warning(
             "Invalid resolve_output_file call: exactly one of file_name or index is required"
         )
-        raise ValueError("Provide exactly one of 'file_name' or 'index'.")
+        raise InvalidLLMInputError(
+            "Provide exactly one of 'file_name' or 'index'."
+        )
 
     end_date = _parse_date_or_today(date, "date")
     params: Dict[str, Any] = {
@@ -785,10 +804,12 @@ def plot_timeseries(
     selector tool's schema.
     """
     return (
-        f"Retrieve a line chart of the time series for variable {variable} "
+        f"Retrieve a line chart plotting the {variable} time series "
         f"for feature id {feature_id} for output index {index} for the "
         f"{forecast} forecast on {model} model and date {date}, "
-        f"cycle {cycle}, and vpu {vpu}"
+        f"cycle {cycle}, and vpu {vpu}. "
+        f"Use a query like: SELECT time, {variable} FROM output "
+        f"WHERE feature_id = {feature_id}"
     )
 
 

@@ -1,9 +1,12 @@
 # nextgen_plugins/chatbox/rest.py
-import fsspec
 import os
 import json
 import logging
 import pandas as pd
+
+from ._io_config import s3_filesystem
+import duckdb
+from botocore.exceptions import ClientError
 
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -27,7 +30,10 @@ from .utils_rest import (
     _list_payload,
     _validate_nrds_output_file_url,
     _detect_output_file_kind,
-    _normalize_output_file_url
+    _normalize_output_file_url,
+    _classify_io_error,
+    _is_duckdb_programmer_error,
+    _classify_llm_sql_error,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,7 +85,7 @@ def list_available_output_files(data) -> Dict:
         s3_url += f"/{vpu}/{NGEN_RUN_PREFIX}"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         outputs = fs.ls(s3_url, detail=False)
         outputs = sorted(outputs)
 
@@ -102,6 +108,12 @@ def list_available_output_files(data) -> Dict:
     except FileNotFoundError:
         logger.info(f"No files found at {s3_url}")
         return _list_payload("files", [], path=s3_url)
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error("IO error %s on %s: %s", type(e).__name__, s3_url, e)
+        return _error_payload(code, msg, fix_hint=fix_hint, path=s3_url)
 
 
 def get_output_file(model, date, forecast, cycle, vpu, file_name=None, index=None, ensemble=None) -> Dict:
@@ -118,6 +130,23 @@ def get_output_file(model, date, forecast, cycle, vpu, file_name=None, index=Non
             "Provide exactly one of file_name or index.",
         )
 
+    # Validation-before-IO: fail fast on obviously-bad index BEFORE the S3
+    # round-trip. The upper-bound check still happens after fs.ls (requires
+    # len(items)) but the lower-bound is cheap and bounded.
+    if index is not None:
+        try:
+            _idx_check = int(index)
+        except (TypeError, ValueError):
+            return _error_payload(
+                "bad_request",
+                "index must be an integer",
+            )
+        if _idx_check < 0:
+            return _error_payload(
+                "bad_request",
+                f"index out of range: {_idx_check}",
+            )
+
     date = _normalize_date_folder(date)
     s3_dir = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}/{date}/{forecast}/{cycle}"
     if forecast == "medium_range":
@@ -127,7 +156,7 @@ def get_output_file(model, date, forecast, cycle, vpu, file_name=None, index=Non
         s3_dir += f"/{vpu}/{NGEN_RUN_PREFIX}"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         files = fs.ls(s3_dir, detail=False)
 
         files = [f for f in files if f.lower().endswith(".parquet") or f.lower().endswith(".nc")]
@@ -181,6 +210,12 @@ def get_output_file(model, date, forecast, cycle, vpu, file_name=None, index=Non
             count=0,
             selected=None,
         )
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error("IO error %s on %s: %s", type(e).__name__, s3_dir, e)
+        return _error_payload(code, msg, fix_hint=fix_hint, dir=s3_dir)
 
 
 def list_available_vpus(model, date, forecast, cycle) -> Dict:
@@ -192,7 +227,7 @@ def list_available_vpus(model, date, forecast, cycle) -> Dict:
         s3_url += "/1"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         dirs = fs.ls(s3_url, detail=False)
 
         vpu_ids = sorted(d.split("/")[-1] for d in dirs)
@@ -203,6 +238,12 @@ def list_available_vpus(model, date, forecast, cycle) -> Dict:
     except FileNotFoundError:
         logger.info(f"No VPUs found at {s3_url}")
         return _list_payload("vpus", [], path=s3_url)
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error("IO error %s on %s: %s", type(e).__name__, s3_url, e)
+        return _error_payload(code, msg, fix_hint=fix_hint, path=s3_url)
 
 
 def list_available_cycles(model, date, forecast) -> Dict:
@@ -212,7 +253,7 @@ def list_available_cycles(model, date, forecast) -> Dict:
     s3_url = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}/{date}/{forecast}/"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         dirs = fs.ls(s3_url, detail=False)
 
         cycle_ids = [d.split("/")[-1] for d in dirs]
@@ -223,6 +264,12 @@ def list_available_cycles(model, date, forecast) -> Dict:
     except FileNotFoundError:
         logger.info(f"No cycles found at {s3_url}")
         return _list_payload("cycles", [], path=s3_url)
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error("IO error %s on %s: %s", type(e).__name__, s3_url, e)
+        return _error_payload(code, msg, fix_hint=fix_hint, path=s3_url)
 
 
 def list_available_dates(model) -> Dict:
@@ -231,7 +278,7 @@ def list_available_dates(model) -> Dict:
     s3_url = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}"
 
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         dirs = fs.ls(s3_url, detail=False)
 
         date_ids = [d.split("/")[-1].rstrip("/") for d in dirs]  # e.g. ngen.20260218
@@ -256,6 +303,12 @@ def list_available_dates(model) -> Dict:
     except FileNotFoundError:
         logger.info(f"No dates found at {s3_url}")
         return _list_payload("dates", [], path=s3_url)
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error("IO error %s on %s: %s", type(e).__name__, s3_url, e)
+        return _error_payload(code, msg, fix_hint=fix_hint, path=s3_url)
 
 
 def list_available_forecasts(model, date) -> Dict:
@@ -264,7 +317,7 @@ def list_available_forecasts(model, date) -> Dict:
     date = _normalize_date_folder(date)
     s3_url = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}/{date}/"
     try:
-        fs = fsspec.filesystem("s3", anon=True)
+        fs = s3_filesystem()
         dirs = fs.ls(s3_url, detail=False)
 
         forecast_ids = [d.split("/")[-1] for d in dirs]
@@ -276,12 +329,18 @@ def list_available_forecasts(model, date) -> Dict:
     except FileNotFoundError:
         logger.info(f"No forecasts found at {s3_url}")
         return _list_payload("forecasts", [], path=s3_url)
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error("IO error %s on %s: %s", type(e).__name__, s3_url, e)
+        return _error_payload(code, msg, fix_hint=fix_hint, path=s3_url)
 
 
 def list_available_models() -> Dict:
     logger.info(f"Listing available models in bucket={BUCKET} under {OUTPUTS_DIR}")
     s3_url = f"s3://{BUCKET}/{OUTPUTS_DIR}"
-    fs = fsspec.filesystem("s3", anon=True)
+    fs = s3_filesystem()
     try:
         dirs = fs.ls(s3_url, detail=False)
         model_ids = [d.split("/")[-1] for d in dirs]
@@ -291,6 +350,12 @@ def list_available_models() -> Dict:
     except FileNotFoundError:
         logger.info(f"No models found at {s3_url}")
         return _list_payload("models", [], path=s3_url)
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error("IO error %s on %s: %s", type(e).__name__, s3_url, e)
+        return _error_payload(code, msg, fix_hint=fix_hint, path=s3_url)
 
 
 # def query_netcdf_output_file(s3_url, query) -> Dict:
@@ -500,23 +565,62 @@ def query_output_file(s3_url, query) -> Dict:
             data=df.to_dict(orient="records"),
         )
 
-    except FileNotFoundError:
-        logger.error("File not found: %s", file_url)
+    except (duckdb.BinderException, duckdb.ParserException, duckdb.CatalogException) as e:
+        # LLM-supplied SQL programmer error. Unlike the hardcoded-SQL
+        # paths (which re-raise via _is_duckdb_programmer_error), these
+        # errors are RECOVERABLE if the LLM gets a structured envelope
+        # with the available column list as fix_hint — same shape as the
+        # input-validation middleware's invalid_args response. Observed
+        # 2026-05-10: qwen stalled on a BinderException when this re-raised
+        # as a protocol error; with the structured envelope below the
+        # LLM has the actual column candidates and can retry in one turn.
+        code, msg, fix_hint, available_columns = _classify_llm_sql_error(
+            e, file_url, query
+        )
+        logger.warning(
+            "LLM SQL error %s on %s file %s: %s",
+            type(e).__name__,
+            kind,
+            file_url,
+            e,
+        )
         return _error_payload(
-            "not_found",
-            f"File not found: {file_url}",
+            code,
+            msg,
+            fix_hint=fix_hint,
             file=file_url,
             file_type=kind,
             query=query,
-            columns=[],
-            rows=0,
-            data=[],
+            available_columns=available_columns,
         )
-    except Exception as e:
-        logger.error("Error querying %s file: %s", kind, e)
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error(
+            "IO error %s querying %s file %s: %s",
+            type(e).__name__,
+            kind,
+            file_url,
+            e,
+        )
+        # not_found preserves the empty-result shape that callers expect
+        if code == "not_found":
+            return _error_payload(
+                code,
+                msg,
+                fix_hint=fix_hint,
+                file=file_url,
+                file_type=kind,
+                query=query,
+                columns=[],
+                rows=0,
+                data=[],
+            )
         return _error_payload(
-            "execution_error",
-            str(e),
+            code,
+            msg,
+            fix_hint=fix_hint,
             file=file_url,
             file_type=kind,
             query=query,
@@ -635,22 +739,31 @@ def query_hydrofabric_parquet_file(hydrofabric_id: str, limit: int = 50) -> Dict
             rows=int(len(df)),
             data=df.to_dict(orient="records"),
         )
-    except FileNotFoundError:
-        logger.error("File not found: %s", HYDROFABRIC_INDEX_URL)
-        return _error_payload(
-            "not_found",
-            f"File not found: {HYDROFABRIC_INDEX_URL}",
-            file=HYDROFABRIC_INDEX_URL,
-            hydrofabric_id=hydrofabric_id,
-            columns=[],
-            rows=0,
-            data=[],
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error(
+            "IO error %s on hydrofabric parquet %s: %s",
+            type(e).__name__,
+            HYDROFABRIC_INDEX_URL,
+            e,
         )
-    except Exception as e:
-        logger.error("Error querying hydrofabric parquet file: %s", e)
+        if code == "not_found":
+            return _error_payload(
+                code,
+                msg,
+                fix_hint=fix_hint,
+                file=HYDROFABRIC_INDEX_URL,
+                hydrofabric_id=hydrofabric_id,
+                columns=[],
+                rows=0,
+                data=[],
+            )
         return _error_payload(
-            "execution_error",
-            str(e),
+            code,
+            msg,
+            fix_hint=fix_hint,
             file=HYDROFABRIC_INDEX_URL,
             hydrofabric_id=hydrofabric_id,
         )
@@ -726,11 +839,20 @@ def lookup_hydrofabric_feature(hydrofabric_id: str) -> Dict[str, Any]:
             bbox=bbox,
         )
 
-    except Exception as e:
-        logger.exception("Error looking up hydrofabric feature")
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error(
+            "IO error %s looking up hydrofabric feature %s: %s",
+            type(e).__name__,
+            hydrofabric_id,
+            e,
+        )
         return _error_payload(
-            "execution_error",
-            str(e),
+            code,
+            msg,
+            fix_hint=fix_hint,
             rows=[],
             pmtiles_layer=None,
             bbox=None,

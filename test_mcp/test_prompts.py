@@ -268,6 +268,84 @@ def test_get_prompt_substitutes_supplied_args_only():
 
 
 # ---------------------------------------------------------------------------
+# Small-model phrasing — plot_timeseries prose must give an unambiguous
+# SQL hint so small Ollama models (qwen, gemma) don't hallucinate a
+# column named "variable" from the phrase "for variable {variable}".
+# Bug observed 2026-05-10 on qwen running the full template.
+# ---------------------------------------------------------------------------
+
+
+def test_plot_timeseries_prose_avoids_ambiguous_variable_phrasing():
+    """The rendered prose must NOT contain 'for variable {value}' (the
+    ambiguous phrasing that small models parse as a column filter).
+
+    Specifically, after substitution to e.g. variable='velocity', the
+    text 'for variable velocity' must NOT appear.
+    """
+    args = _synth_bracket_args()
+    args["variable"] = "velocity"
+    args["feature_id"] = "1019290"
+
+    async def go():
+        async with Client(mcp) as c:
+            return await c.get_prompt("plot_timeseries", args)
+
+    result = _run(go())
+    text = _concat_text(result.messages)
+    assert "for variable velocity" not in text, (
+        f"prose contains the ambiguous 'for variable <value>' phrasing "
+        f"that small models misread as a column filter; got: {text!r}"
+    )
+
+
+def test_plot_timeseries_prose_names_variable_as_a_column():
+    """The rendered prose must name {variable} as a COLUMN, not as a value
+    to filter by. Concrete check: when variable=velocity, the prose must
+    include either 'velocity column' OR 'SELECT ... velocity' OR similar
+    SQL-shaped phrasing that anchors {variable} as a column identifier.
+    """
+    args = _synth_bracket_args()
+    args["variable"] = "velocity"
+    args["feature_id"] = "1019290"
+
+    async def go():
+        async with Client(mcp) as c:
+            return await c.get_prompt("plot_timeseries", args)
+
+    result = _run(go())
+    text = _concat_text(result.messages)
+
+    column_anchors = [
+        "SELECT time, velocity",
+        "velocity column",
+        "velocity columns",
+    ]
+    assert any(anchor in text for anchor in column_anchors), (
+        f"prose must anchor 'velocity' as a column. Checked anchors: "
+        f"{column_anchors}. got: {text!r}"
+    )
+
+
+def test_plot_timeseries_prose_names_feature_id_as_filter_column():
+    """The rendered prose must show that feature_id is a column to filter
+    on, not just a number. Pinning shape: 'feature_id = <value>' appears.
+    """
+    args = _synth_bracket_args()
+    args["variable"] = "velocity"
+    args["feature_id"] = "1019290"
+
+    async def go():
+        async with Client(mcp) as c:
+            return await c.get_prompt("plot_timeseries", args)
+
+    result = _run(go())
+    text = _concat_text(result.messages)
+    assert "feature_id = 1019290" in text, (
+        f"prose must anchor feature_id as a filterable column; got: {text!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Argument-name parity with query_output_file_from_output_selector
 # ---------------------------------------------------------------------------
 
