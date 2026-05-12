@@ -74,8 +74,6 @@ The remaining 11 tools (lists, resolvers, queries) are unchanged.
   saved MCP server config) must update to `…/mcp`. chatbox-core's
   `pickTransport()` auto-detects from the URL suffix, so only the URL
   string changes — no code change in consumers.
-- To run the legacy SSE transport, set `MCP_TRANSPORT=sse` env var; the
-  server will revert to `/sse` and the legacy `event: endpoint` flow.
 
 ### Fixed
 
@@ -138,9 +136,6 @@ First deployable container image.
 - Multi-stage `Dockerfile` (Python 3.11-slim builder + slim runtime) producing
   a non-root image with `HEALTHCHECK` polling `GET /health` every 30 s.
 - `/health` route returning `{"status":"ok"}` for liveness probes.
-- Env-var configurable `MCP_HOST`, `MCP_PORT`, `MCP_TRANSPORT` (defaults
-  `0.0.0.0`, `9000`, `sse` — backwards-compatible with the pre-container
-  hardcoded values).
 - `nextgen_mcp/requirements.lock` — full transitive closure (99 pinned
   packages) for reproducible builds.
 - GitHub Actions CI: Python smoke import + Docker build + container smoke

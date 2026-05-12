@@ -24,8 +24,8 @@ Verify it's running:
 curl -fsS http://localhost:9000/health
 # {"status":"ok"}
 ```
-
-Connect an MCP client to `http://<host>:9000/mcp` (Streamable HTTP transport, default since v0.1.1; legacy SSE clients should use `MCP_TRANSPORT=sse` and connect to `/sse` instead).
+=
+Connect an MCP client to `http://<host>:9000/mcp` (Streamable HTTP transport, default since v0.1.1;
 
 ## Image Tags
 
@@ -60,7 +60,6 @@ The container exposes `GET /health` returning `200 {"status":"ok"}`. The Docker 
 | Path | Method | Purpose |
 |---|---|---|
 | `/mcp` | GET, POST | MCP Streamable HTTP transport endpoint (default since v0.1.1). Connect MCP clients here. |
-| `/sse` | GET | MCP SSE transport endpoint (only when `MCP_TRANSPORT=sse`). |
 | `/health` | GET | Liveness probe. |
 
 The MCP tool surface (e.g., `list_available_models`, `query_output_file_from_output_selector`, `lookup_hydrofabric_feature`) is discovered automatically by MCP clients; consult the source for the full list. To render a chart or map from these results, chain into a host-side render tool — this server does not return Plotly figure JSON or map configurations.
