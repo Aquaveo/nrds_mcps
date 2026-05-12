@@ -25,7 +25,7 @@ def _run(coro):
 
 
 # ---------------------------------------------------------------------------
-# InputValidationEnvelopeMiddleware — structured envelope on bad input
+# InputValidationEnvelopeMiddleware - structured envelope on bad input
 # ---------------------------------------------------------------------------
 
 
@@ -65,7 +65,7 @@ def test_missing_required_arg_produces_invalid_args_envelope():
     payload = result.structured_content
     assert isinstance(payload, dict)
     # list_available_dates uses _require() which returns its own error envelope
-    # — middleware only intercepts pydantic ValidationError. Both error paths
+    # - middleware only intercepts pydantic ValidationError. Both error paths
     # are valid; this test verifies SOMETHING structured comes back, not a
     # raw exception.
     assert "error" in payload or "ok" in payload
@@ -95,7 +95,7 @@ def test_envelope_includes_expected_kwargs_for_tool():
 
 
 # ---------------------------------------------------------------------------
-# ToolCallObservabilityMiddleware — log line per call
+# ToolCallObservabilityMiddleware - log line per call
 # ---------------------------------------------------------------------------
 
 
@@ -103,7 +103,7 @@ def test_observability_logs_one_line_per_call(caplog, mock_fsspec_empty_ls):
     """Successful tool call emits one tool-call=... log line with status=ok.
 
     Uses mock_fsspec_empty_ls so the S3 call returns [] without hitting
-    live infrastructure — keeps the test deterministic on CI / local envs
+    live infrastructure - keeps the test deterministic on CI / local envs
     with botocore/s3fs version mismatches.
     """
 
@@ -158,7 +158,7 @@ def test_pattern_mismatch_fix_hint_includes_pattern_and_field():
     Pydantic raised string_pattern_mismatch on the
     ^(?:\\d{4}-\\d{2}-\\d{2}|\\d{4}/\\d{2}/\\d{2})$ regex. The
     middleware's old fix_hint just said 'Fix the type / value errors in
-    details' — the LLM had no clue what pattern to satisfy.
+    details' - the LLM had no clue what pattern to satisfy.
     """
 
     async def go():
@@ -233,7 +233,7 @@ def test_xor_violation_returns_envelope_not_raise():
 
     async def go():
         async with Client(mcp) as c:
-            # Pass both file_name AND index — triggers the XOR check.
+            # Pass both file_name AND index - triggers the XOR check.
             return await c.call_tool(
                 "resolve_output_file",
                 {
@@ -275,7 +275,7 @@ def test_incidental_value_error_is_not_enveloped(monkeypatch):
     def boom(*_a, **_kw):
         raise ValueError("simulated upstream parse failure")
 
-    monkeypatch.setattr(mcp_server, "_get_json_raw", boom)
+    monkeypatch.setattr(mcp_server.tools, "_get_json_raw", boom)
 
     async def go():
         async with Client(mcp) as c:
@@ -287,7 +287,7 @@ def test_incidental_value_error_is_not_enveloped(monkeypatch):
     try:
         result = _run(go())
     except Exception:
-        # Re-raised — that's the desired behavior. Bare ValueError is
+        # Re-raised - that's the desired behavior. Bare ValueError is
         # treated as a programmer/infrastructure error and surfaces as
         # the normal MCP protocol error path.
         return
@@ -328,7 +328,7 @@ def test_observability_logs_invalid_args_status(caplog):
 # that's the only constraint type the current tool schemas use in a way the
 # LLM can trip). The middleware claims to phrase 8 other pydantic error
 # types from its `_CTX_KEY_ALLOWLIST`, but those branches were dead from a
-# test perspective — a typo in any of them (wrong ctx-key name, wrong op
+# test perspective - a typo in any of them (wrong ctx-key name, wrong op
 # symbol) would ship undetected. These unit tests lock the phrasing
 # contract per branch so refactors can't silently break it.
 
@@ -552,7 +552,7 @@ def test_summarize_errors_omits_unallowlisted_ctx_keys():
                 "loc": ("d",),
                 "ctx": {
                     "pattern": "^x$",
-                    # Should be filtered out — would leak user input.
+                    # Should be filtered out - would leak user input.
                     "input_value": "secret_user_supplied",
                 },
             }

@@ -1,4 +1,4 @@
-from _mcp import LOGGER
+from ._mcp import LOGGER
 from typing import Optional
 from datetime import datetime
 from ._input_validation_middleware import InvalidLLMInputError

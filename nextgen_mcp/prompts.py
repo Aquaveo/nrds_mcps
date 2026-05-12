@@ -1,14 +1,13 @@
-from _mcp import mcp
+from ._mcp import mcp
 from pydantic import Field
 from typing import Annotated
-from .utils import (
+from .validations import (
     MODEL_HINT,
     FORECAST_HINT,
     DATE_HINT,
     CYCLE_HINT,
     VPU_HINT,
 )
-
 
 @mcp.prompt
 def plot_timeseries(
