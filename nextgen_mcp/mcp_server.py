@@ -8,8 +8,7 @@ from typing import List
 
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
-# from starlette.requests import Request
-from starlette.responses import Response
+
 
 def _configure_runtime_logging() -> None:
     level_name = os.getenv("NRDS_LOG_LEVEL", "INFO").upper()
@@ -54,49 +53,8 @@ def _parse_allowed_origins() -> List[str]:
 
 
 ALLOWED_ORIGINS = _parse_allowed_origins()
-# CORS spec forbids `allow_credentials=True` together with `allow_origins=["*"]`.
-# We don't use cookies/Authorization in this MCP server (the SSE endpoint is
-# public unauthenticated by design), so drop credentials to allow the wildcard.
+
 ALLOW_CREDENTIALS = ALLOWED_ORIGINS != ["*"]
-
-
-def _patch_sse_transport_for_cors():
-    """Monkey-patch SseServerTransport.handle_post_message to handle OPTIONS.
-
-    MCP SDK v1.26+ validates Content-Type on all requests routed to
-    handle_post_message, including CORS preflight OPTIONS (which have no
-    Content-Type). This patch intercepts OPTIONS and returns 200 with
-    CORS headers before the SDK's validation runs.
-    """
-    from mcp.server.sse import SseServerTransport
-
-    original_handle = SseServerTransport.handle_post_message
-
-    async def patched_handle(self, scope, receive, send):
-        if scope.get("method") == "OPTIONS":
-            origin = dict(scope.get("headers", [])).get(b"origin", b"").decode()
-            if ALLOWED_ORIGINS == ["*"]:
-                allow_origin = "*"
-            else:
-                allow_origin = origin if origin in ALLOWED_ORIGINS else ""
-            headers = {
-                "access-control-allow-methods": "GET, POST, OPTIONS",
-                "access-control-allow-headers": "content-type, x-csrftoken, authorization",
-                "access-control-max-age": "86400",
-            }
-            if allow_origin:
-                headers["access-control-allow-origin"] = allow_origin
-            if ALLOW_CREDENTIALS and allow_origin and allow_origin != "*":
-                headers["access-control-allow-credentials"] = "true"
-            response = Response(status_code=200, headers=headers)
-            await response(scope, receive, send)
-            return
-        await original_handle(self, scope, receive, send)
-
-    SseServerTransport.handle_post_message = patched_handle
-
-_patch_sse_transport_for_cors()
-
 
 CORS_MIDDLEWARE = [
     Middleware(
@@ -107,7 +65,6 @@ CORS_MIDDLEWARE = [
         allow_headers=["*"],
     ),
 ]
-
 
 def main() -> None:
     _configure_runtime_logging()
