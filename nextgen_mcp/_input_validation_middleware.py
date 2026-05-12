@@ -32,7 +32,7 @@ Envelope quality:
   - `fix_hint` tailors a natural-language recovery instruction to the
     error class(es) that fired.
 
-The envelope shape is additive — keys appear only when their bucket is
+The envelope shape is additive - keys appear only when their bucket is
 non-empty, so consumers asserting on the ``unexpected_kwargs``-only or
 ``details``-only shapes continue to pass for those single-class cases.
 """
@@ -68,7 +68,7 @@ class InvalidLLMInputError(ValueError):
     envelope. Plain ``ValueError`` (or its stdlib subclasses like
     ``UnicodeDecodeError`` / ``JSONDecodeError``) raised from inside a tool
     body is treated as a programmer / infrastructure error and re-raised
-    unchanged — otherwise transient S3 / parse failures would be silently
+    unchanged - otherwise transient S3 / parse failures would be silently
     re-classified as LLM-input mistakes and trigger fruitless retry loops.
     """
 
@@ -150,7 +150,7 @@ class InputValidationEnvelopeMiddleware(Middleware):
             # LLM-recoverable invalid input. Plain ValueError and its
             # stdlib subclasses (UnicodeDecodeError, JSONDecodeError) raised
             # incidentally from helpers like int(), datetime.fromisoformat,
-            # or pandas parsers are NOT recoverable — they signal upstream
+            # or pandas parsers are NOT recoverable - they signal upstream
             # data corruption or programmer error, and re-raising preserves
             # observability and avoids fruitless LLM retry loops.
             cause = exc.__cause__
@@ -178,7 +178,7 @@ async def _expected_kwargs_for_tool(
     """Return the sorted list of property names from the tool's input schema.
 
     Falls back to ``[]`` if the FastMCP context, registry lookup, or schema
-    is unavailable / malformed — the envelope is still informative without
+    is unavailable / malformed - the envelope is still informative without
     `expected_kwargs`, just less helpful.
     """
     fastmcp_ctx = getattr(context, "fastmcp_context", None)
@@ -187,11 +187,11 @@ async def _expected_kwargs_for_tool(
     try:
         fastmcp = fastmcp_ctx.fastmcp
     except RuntimeError:
-        # Context dereference race — server is shutting down or detached.
+        # Context dereference race - server is shutting down or detached.
         return []
     try:
         tool = await fastmcp.get_tool(tool_name)
-    except Exception:  # pragma: no cover — defensive
+    except Exception:  # pragma: no cover - defensive
         return []
     if tool is None:
         return []
@@ -206,8 +206,8 @@ def _classify_errors(
     """Split pydantic errors into (unexpected_kwargs, missing_kwargs, other_errors).
 
     Pydantic error-type codes used:
-      - `unexpected_keyword_argument` — kwarg not in signature
-      - `missing_argument` — required parameter not provided
+      - `unexpected_keyword_argument` - kwarg not in signature
+      - `missing_argument` - required parameter not provided
       - everything else (type errors, value-out-of-range, etc.) → other_errors
     """
     unexpected_kwargs: list[str] = []
@@ -293,7 +293,7 @@ def _describe_other_errors(others: list[dict[str, Any]]) -> str:
     """Build a per-field natural-language constraint description.
 
     Reads pydantic error dicts (post-`_summarize_errors`-equivalent shape,
-    or raw — both supported) and produces a single phrase per field naming
+    or raw - both supported) and produces a single phrase per field naming
     the field AND the constraint it failed. Returns "" when none of the
     error types have a known phrasing, so the caller can fall back to the
     generic hint.
@@ -310,7 +310,7 @@ def _describe_other_errors(others: list[dict[str, Any]]) -> str:
         )
         err_type = err.get("type")
         # Merge raw ctx (raw pydantic error path) with the entry's top-level
-        # keys (post-_summarize_errors path). Top-level wins on collision —
+        # keys (post-_summarize_errors path). Top-level wins on collision -
         # that's the flattened shape's intended source of truth.
         merged = {**(err.get("ctx") or {}), **err}
 

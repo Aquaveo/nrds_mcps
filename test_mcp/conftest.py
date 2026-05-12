@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
+from nextgen_mcp import logic
 import pytest
 
 
@@ -43,13 +44,13 @@ class _MockFsspecFilesystem:
 
 def _install_fsspec_fault(monkeypatch: pytest.MonkeyPatch, exc: Exception):
     """Patch s3_filesystem() in both rest.py and _io_config.py to raise exc."""
-    from nextgen_mcp import _io_config, rest
+    from nextgen_mcp import _io_config
 
     def _factory():
         return _MockFsspecFilesystem(exc)
 
     monkeypatch.setattr(_io_config, "s3_filesystem", _factory)
-    monkeypatch.setattr(rest, "s3_filesystem", _factory)
+    monkeypatch.setattr(logic, "s3_filesystem", _factory)
 
 
 @pytest.fixture
@@ -83,7 +84,7 @@ def mock_fsspec_empty_ls(monkeypatch: pytest.MonkeyPatch):
     """fs.ls returns []. Useful when a test needs the IO call to succeed
     (so the surrounding code runs) but shouldn't hit live S3.
     """
-    from nextgen_mcp import _io_config, rest
+    from nextgen_mcp import _io_config
 
     class _OkFS:
         def ls(self, *args, **kwargs):
@@ -96,7 +97,7 @@ def mock_fsspec_empty_ls(monkeypatch: pytest.MonkeyPatch):
         return _OkFS()
 
     monkeypatch.setattr(_io_config, "s3_filesystem", _factory)
-    monkeypatch.setattr(rest, "s3_filesystem", _factory)
+    monkeypatch.setattr(logic, "s3_filesystem", _factory)
 
 
 @pytest.fixture

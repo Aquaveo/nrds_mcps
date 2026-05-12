@@ -1,4 +1,11 @@
-# nextgen_plugins/chatbox/rest.py
+"""
+file logic.py
+
+Description: Implements the core logic for listing and querying NRDS output files on S3, as well as looking up hydrofabric features. 
+This is the main "M" in MCP, and is called
+
+"""
+
 import os
 import json
 import logging
@@ -475,6 +482,7 @@ def query_output_file(s3_url, query) -> Dict:
             query=query,
         )
 
+
 def query_output_file_from_output_selector(
     model,
     date,
@@ -553,6 +561,7 @@ def query_output_file_from_output_selector(
         query_result.setdefault("selected", selected)
 
     return query_result
+
 
 def query_hydrofabric_parquet_file(hydrofabric_id: str, limit: int = 50) -> Dict:
     """Run a hydrofabric id lookup against the hydrofabric parquet file on S3."""

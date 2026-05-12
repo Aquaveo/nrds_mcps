@@ -16,7 +16,7 @@ S3 URLs, no presigned URL tokens leak into the LLM-facing envelope).
 """
 from __future__ import annotations
 
-from nextgen_mcp import rest
+from nextgen_mcp import logic, logic
 from nextgen_mcp.utils_rest import (
     _classify_io_error,
     _is_duckdb_programmer_error,
@@ -195,7 +195,7 @@ def test_all_codes_have_sanitized_message_and_fix_hint():
 def test_list_available_models_returns_envelope_on_permission_denied(
     mock_fsspec_permission_denied,
 ):
-    result = rest.list_available_models()
+    result = logic.list_available_models()
     assert result.get("ok") is False
     assert result["error"]["code"] == "permission_denied"
     assert "fix_hint" in result
@@ -203,7 +203,7 @@ def test_list_available_models_returns_envelope_on_permission_denied(
 
 
 def test_list_available_models_returns_envelope_on_timeout(mock_fsspec_timeout):
-    result = rest.list_available_models()
+    result = logic.list_available_models()
     assert result.get("ok") is False
     assert result["error"]["code"] == "timeout"
     assert "retry the same call once" in result["fix_hint"].lower()
@@ -212,7 +212,7 @@ def test_list_available_models_returns_envelope_on_timeout(mock_fsspec_timeout):
 def test_list_available_models_returns_envelope_on_connection_error(
     mock_fsspec_connection_error,
 ):
-    result = rest.list_available_models()
+    result = logic.list_available_models()
     assert result.get("ok") is False
     assert result["error"]["code"] == "upstream_error"
 
@@ -220,7 +220,7 @@ def test_list_available_models_returns_envelope_on_connection_error(
 def test_list_available_models_returns_envelope_on_botocore_client_error(
     mock_fsspec_botocore_client_error,
 ):
-    result = rest.list_available_models()
+    result = logic.list_available_models()
     assert result.get("ok") is False
     # Throttling maps to upstream_error
     assert result["error"]["code"] == "upstream_error"
@@ -228,7 +228,7 @@ def test_list_available_models_returns_envelope_on_botocore_client_error(
 
 def test_list_available_models_returns_empty_on_not_found(mock_fsspec_not_found):
     """FileNotFoundError preserves the existing benign-empty payload behavior."""
-    result = rest.list_available_models()
+    result = logic.list_available_models()
     # Benign no-results path — _list_payload returns ok-shape with empty list
     assert "models" in result
     assert result["models"] == []
@@ -238,7 +238,7 @@ def test_query_hydrofabric_returns_envelope_on_duckdb_io_error(
     mock_duckdb_connect_io_error,
 ):
     """DuckDB IOException -> upstream_error envelope."""
-    result = rest.query_hydrofabric_parquet_file("wb-1019290")
+    result = logic.query_hydrofabric_parquet_file("wb-1019290")
     assert result.get("ok") is False
     assert result["error"]["code"] == "upstream_error"
     assert "fix_hint" in result
@@ -254,7 +254,7 @@ def test_query_hydrofabric_reraises_duckdb_binder_error(mock_duckdb_binder_error
     import pytest as _pytest
 
     with _pytest.raises(duckdb.BinderException):
-        rest.query_hydrofabric_parquet_file("wb-1019290")
+        logic.query_hydrofabric_parquet_file("wb-1019290")
 
 
 # ---------------------------------------------------------------------------
@@ -274,9 +274,9 @@ def test_get_output_file_negative_index_fails_before_s3_call(monkeypatch):
     from nextgen_mcp import _io_config
 
     monkeypatch.setattr(_io_config, "s3_filesystem", lambda: _CountingFS())
-    monkeypatch.setattr(rest, "s3_filesystem", lambda: _CountingFS())
+    monkeypatch.setattr(logic, "s3_filesystem", lambda: _CountingFS())
 
-    result = rest.get_output_file(
+    result = logic.get_output_file(
         model="cfe_nom",
         date="2026-05-01",
         forecast="medium_range",
@@ -399,7 +399,7 @@ def test_query_output_file_returns_envelope_on_binder_exception(monkeypatch):
     """
     import duckdb
 
-    from nextgen_mcp import rest, utils_rest
+    from nextgen_mcp import utils_rest
 
     def _raise_binder(file_url, query):
         raise duckdb.BinderException(
@@ -408,9 +408,9 @@ def test_query_output_file_returns_envelope_on_binder_exception(monkeypatch):
         )
 
     monkeypatch.setattr(utils_rest, "_duckdb_query_parquet", _raise_binder)
-    monkeypatch.setattr(rest, "_duckdb_query_parquet", _raise_binder)
+    monkeypatch.setattr(logic, "_duckdb_query_parquet", _raise_binder)
 
-    result = rest.query_output_file(
+    result = logic.query_output_file(
         s3_url="s3://ciroh-community-ngen-datastream/outputs/x/y.parquet",
         query="SELECT * FROM output WHERE variable = 'velocity'",
     )
@@ -435,9 +435,9 @@ def test_get_output_file_oversize_index_still_requires_s3(monkeypatch):
     from nextgen_mcp import _io_config
 
     monkeypatch.setattr(_io_config, "s3_filesystem", lambda: _CountingFS())
-    monkeypatch.setattr(rest, "s3_filesystem", lambda: _CountingFS())
+    monkeypatch.setattr(logic, "s3_filesystem", lambda: _CountingFS())
 
-    rest.get_output_file(
+    logic.get_output_file(
         model="cfe_nom",
         date="2026-05-01",
         forecast="medium_range",
