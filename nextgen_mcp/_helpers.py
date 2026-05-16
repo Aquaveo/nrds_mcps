@@ -1,7 +1,7 @@
 from ._mcp import LOGGER
 from typing import Optional
 from datetime import datetime
-from ._input_validation_middleware import InvalidLLMInputError
+from ..middleware._input_validation_middleware import InvalidLLMInputError
 
 from .utils import (
     _parse_iso_date,

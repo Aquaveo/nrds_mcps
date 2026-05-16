@@ -23,7 +23,7 @@ from ._helpers import (
     _validate_date_bounds
 )
 
-from ._input_validation_middleware import InvalidLLMInputError
+from ..middleware._input_validation_middleware import InvalidLLMInputError
 
 @mcp.tool(name="list_available_models", description="List available NRDS models. It should not have any arguments when called.")
 def list_available_models_tool() -> Dict[str, Any]:

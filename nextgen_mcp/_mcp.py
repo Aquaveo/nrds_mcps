@@ -1,8 +1,8 @@
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from ._input_validation_middleware import InputValidationEnvelopeMiddleware
-from ._observability_middleware import ToolCallObservabilityMiddleware
+from ..middleware._input_validation_middleware import InputValidationEnvelopeMiddleware
+from ..middleware._observability_middleware import ToolCallObservabilityMiddleware
 import logging
 
 # Middleware order:
