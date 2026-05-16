@@ -4,7 +4,7 @@ import re
 from typing import Dict, Any, Optional
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
-from .validators import normalize_vpu
+from .validation import normalize_vpu
 from .logic import (
     list_available_models,
     list_available_dates,

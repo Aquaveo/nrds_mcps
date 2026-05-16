@@ -13,7 +13,7 @@ from .utils import (
     DATE_PATTERN,
     _date_from_item,
 )
-from .validations import (
+from .validation import (
     FORECASTS,
     MODELS,
 )

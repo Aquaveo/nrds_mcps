@@ -175,8 +175,7 @@ nextgen_mcp/
   __init__.py
   mcp_server.py      # MCP server entry point (FastMCP + tool definitions)
   utils.py            # Helper functions, REST API bridge
-  validations.py      # Type literals (FORECASTS, MODELS)
-  validators.py       # Pydantic validators (normalize_vpu, OutputsFilesQuery)
+  validation.py       # Pydantic and Literal validators (normalize_vpu, OutputsFilesQuery)
   rest.py             # REST API wrappers (S3, DuckDB, output file queries)
   utils_rest.py       # Low-level utilities (DuckDB queries, Plotly chart generation)
   requirements.txt    # Python dependencies

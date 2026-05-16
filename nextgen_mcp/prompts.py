@@ -1,7 +1,7 @@
 from ._mcp import mcp
 from pydantic import Field
 from typing import Annotated
-from .validations import (
+from .validation import (
     MODEL_HINT,
     FORECAST_HINT,
     DATE_HINT,
@@ -45,7 +45,7 @@ def plot_timeseries(
 
     Hints are derived from the validation types on
     ``query_output_file_from_output_selector`` and the NRDS Literal
-    types in ``validations.py`` (``MODELS``, ``FORECASTS``,
+    types in ``validation.py`` (``MODELS``, ``FORECASTS``,
     ``DATE_PATTERN``). When NRDS adds a new model, forecast, or vpu,
     update the description string here in lockstep.
 
@@ -75,8 +75,8 @@ def plot_timeseries(
 #   - Each routing arg is required:true on the prompt (per plan R6, even
 #     when the underlying tool would default; editors should be explicit
 #     about routing decisions when invoking a slash command).
-#   - Hint copy is drawn from canonical Literal types in validations.py
-#     (MODELS, FORECASTS, DATE_PATTERN). LOCKSTEP RULE: when validations.py
+#   - Hint copy is drawn from canonical Literal types in validation.py
+#     (MODELS, FORECASTS, DATE_PATTERN). LOCKSTEP RULE: when validation.py
 #     adds a new model, forecast, or vpu format, update both the tool's
 #     Field(description=...) AND the @mcp.prompt arg description here.
 #   - Prose is imperative declarative ("List the available …"); verb-first

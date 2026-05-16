@@ -17,7 +17,7 @@ from botocore.exceptions import ClientError
 
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-from .validators import OutputsFilesQuery
+from .validation import OutputsFilesQuery
 from pydantic import ValidationError
 from .utils_rest import (
     _extract_yyyymmdd_from_date_folder,
