@@ -31,6 +31,7 @@ from .logic import (
     query_output_file,
     query_output_file_from_output_selector,
     lookup_hydrofabric_feature as _lookup_hydrofabric_feature,
+    get_hydrofabric_pmtiles_layers
 )
 
 from .middleware._input_validation_middleware import InvalidLLMInputError
@@ -638,4 +639,17 @@ def lookup_hydrofabric_feature_tool(
         hydrofabric_id,
         limit,
     )
+    return result
+
+@mcp.tool(
+    name="get_hydrofabric_pmtiles_layers",
+    description=(
+        "Get the list of hydrofabric PMTiles layers available, along with their metadata. "
+        "This can be used to discover which layers are available and their corresponding map layer ids for rendering."
+    ),
+)
+def get_hydrofabric_pmtiles_layers_tool() -> Dict[str, Any]:
+    LOGGER.info("Tool get_hydrofabric_pmtiles_layers called")
+    result = get_hydrofabric_pmtiles_layers()
+    LOGGER.info("Tool get_hydrofabric_pmtiles_layers completed layer_count=%s", len(result.get("layers", [])))
     return result

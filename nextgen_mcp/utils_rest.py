@@ -57,25 +57,21 @@ HYDROFABRIC_LAYER_CONFIG = {
         "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/flowpaths.pmtiles",
         "map_layer_id": "flowpaths",
         "id_property": "id",
-        "default_zoom": 12,
     },
     "gage": {
         "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/gage.pmtiles",
         "map_layer_id": "conus-gauges",
         "id_property": "id",
-        "default_zoom": 12,
     },
     "divides": {
         "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/divides.pmtiles",
         "map_layer_id": "divides",
         "id_property": "divide_id",
-        "default_zoom": 10,
     },
     "hydrolocations": {
         "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/hydrolocations.pmtiles",
         "map_layer_id": "nexus-points",
         "id_property": "id",
-        "default_zoom": 12,
     },
 }
 
@@ -135,7 +131,6 @@ def _classify_io_error(exc: BaseException) -> tuple[str, str, str]:
 
     message, fix_hint = _IO_ERROR_CATALOG[code]
     return code, message, fix_hint
-
 
 def _is_duckdb_programmer_error(exc: BaseException) -> bool:
     """True if exc is a DuckDB SQL programmer-error class that must NOT be
@@ -530,4 +525,3 @@ def _extract_yyyymmdd_from_date_folder(folder: str) -> str | None:
 def _label_from_id(value: str) -> str:
     """Default label: replace underscores with spaces."""
     return value.replace("_", " ")
-

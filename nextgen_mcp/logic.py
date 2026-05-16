@@ -652,3 +652,24 @@ def lookup_hydrofabric_feature(
             pmtiles_layer=None,
             bbox=None,
         )
+    
+
+def get_hydrofabric_pmtiles_layers() -> Dict[str, Any]:
+    """Return the list of hydrofabric layers and their associated PMTiles layer names."""
+    try:
+        layers = []
+        for layer_key, cfg in HYDROFABRIC_LAYER_CONFIG.items():
+            layers.append({
+                "id": layer_key,
+                "map_layer_id": cfg.get("map_layer_id"),
+                "url": cfg.get("pmtiles_url"),
+                "id_property": cfg.get("id_property"),
+            })
+        return _success_payload(layers=layers)
+    except Exception as e:
+        logger.error("Error getting hydrofabric layers: %s", e)
+        return _error_payload(
+            "execution_error",
+            "Unexpected error getting hydrofabric layers.",
+            details=str(e),
+        )
