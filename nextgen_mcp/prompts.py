@@ -225,29 +225,6 @@ def lookup_feature(
 
 
 @mcp.prompt
-def query_hydrofabric(
-    hydrofabric_id: Annotated[
-        str,
-        Field(
-            description=(
-                "Hydrofabric identifier to search in columns id and divide_id"
-            )
-        ),
-    ],
-) -> str:
-    """Query the hydrofabric index parquet for a given identifier.
-
-    Drives the ``query_hydrofabric_parquet_file`` tool. The optional
-    ``limit`` arg is intentionally not surfaced — only required-shaped
-    args appear on the prompt (see plan Scope Boundaries).
-    """
-    return (
-        f"Query the hydrofabric index parquet for the feature with id "
-        f"{hydrofabric_id}."
-    )
-
-
-@mcp.prompt
 def query_by_url(
     s3_url: Annotated[
         str,

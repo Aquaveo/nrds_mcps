@@ -698,8 +698,8 @@ def test_discovery_prompt_arg_name_parity_with_underlying_tool(
 
 
 # ---------------------------------------------------------------------------
-# Query/lookup prompts (Phase 2b) — lookup_feature, query_hydrofabric,
-# query_by_url, resolve_file_by_index, resolve_file_by_name
+# Query/lookup prompts (Phase 2b) — lookup_feature, query_by_url,
+# resolve_file_by_index, resolve_file_by_name
 #
 # These are query/lookup-archetype prompts (one per query/lookup tool plus
 # the XOR-driven extra variant for resolve_output_file). Tests mirror the
@@ -727,7 +727,6 @@ QUERY_LOOKUP_HINTS = {
 
 QUERY_LOOKUP_PROMPTS = {
     "lookup_feature": ("hydrofabric_id",),
-    "query_hydrofabric": ("hydrofabric_id",),
     "query_by_url": ("s3_url", "query"),
     "resolve_file_by_index": (
         "model",
@@ -752,7 +751,6 @@ QUERY_LOOKUP_PROMPTS = {
 # so the parity test passes for either variant.
 QUERY_LOOKUP_PROMPT_TO_TOOL = {
     "lookup_feature": "lookup_hydrofabric_feature",
-    "query_hydrofabric": "query_hydrofabric_parquet_file",
     "query_by_url": "query_output_file",
     "resolve_file_by_index": "resolve_output_file",
     "resolve_file_by_name": "resolve_output_file",

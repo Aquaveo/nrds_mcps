@@ -23,7 +23,7 @@ from ._helpers import (
     _validate_date_bounds
 )
 
-from ..middleware._input_validation_middleware import InvalidLLMInputError
+from .middleware._input_validation_middleware import InvalidLLMInputError
 
 @mcp.tool(name="list_available_models", description="List available NRDS models. It should not have any arguments when called.")
 def list_available_models_tool() -> Dict[str, Any]:
@@ -574,20 +574,21 @@ def query_output_file_tool(
 
 
 @mcp.tool(
-    name="query_hydrofabric_parquet_file",
+    name="lookup_hydrofabric_feature",
     description=(
-        "Lookup rows in the hydrofabric index parquet file in S3 by hydrofabric identifier. "
-        "Provide hydrofabric_id. "
-        "The tool searches columns id and divide_id using exact and substring matching. "
-        "This tool does not accept s3_url or raw SQL."
+        "Look up hydrofabric features by identifier and return data only. "
+        "Searches columns id and divide_id using exact and substring matching. "
+        "Returns up to `limit` matching rows from the hydrofabric index, plus "
+        "the PMTiles layer name and bounding box derived from the top match. "
+        "Returns an empty result (no rows, null layer, null bbox) when nothing "
+        "matches. The host is responsible for any map rendering or visualization "
+        "built from this data."
     ),
 )
-def query_hydrofabric_parquet_file(
+def lookup_hydrofabric_feature(
     hydrofabric_id: Annotated[
         str,
-        Field(
-            description="Hydrofabric identifier to search for in columns id and divide_id."
-        ),
+        Field(description="Hydrofabric identifier to search in columns id and divide_id.")
     ],
     limit: Annotated[
         int,
@@ -596,51 +597,20 @@ def query_hydrofabric_parquet_file(
             ge=1,
             le=200,
         ),
-    ] = 50,
+    ] = 1,
 ) -> Dict[str, Any]:
     LOGGER.info(
-        "Tool query_hydrofabric_parquet_file called hydrofabric_id=%s limit=%s",
+        "Tool lookup_hydrofabric_feature called hydrofabric_id=%s limit=%s",
         hydrofabric_id,
         limit,
-    )
-    result = _get_json_raw(
-        "query_hydrofabric_parquet_file",
-        params={"hydrofabric_id": hydrofabric_id, "limit": limit},
-    )
-    LOGGER.info(
-        "Tool query_hydrofabric_parquet_file completed hydrofabric_id=%s limit=%s",
-        hydrofabric_id,
-        limit,
-    )
-    return result
-
-
-@mcp.tool(
-    name="lookup_hydrofabric_feature",
-    description=(
-        "Look up a hydrofabric feature by identifier and return data only. "
-        "Returns matching rows from the hydrofabric index, the associated PMTiles "
-        "layer name, and a bounding box for the feature. Returns an empty result "
-        "(no rows, null layer, null bbox) when nothing matches. "
-        "The host is responsible for any map rendering or visualization built from this data."
-    ),
-)
-def lookup_hydrofabric_feature(
-    hydrofabric_id: Annotated[
-        str,
-        Field(description="Hydrofabric identifier to search in columns id and divide_id.")
-    ]
-) -> Dict[str, Any]:
-    LOGGER.info(
-        "Tool lookup_hydrofabric_feature called hydrofabric_id=%s",
-        hydrofabric_id,
     )
     result = _get_json_raw(
         "lookup_hydrofabric_feature",
-        params={"hydrofabric_id": hydrofabric_id},
+        params={"hydrofabric_id": hydrofabric_id, "limit": limit},
     )
     LOGGER.info(
-        "Tool lookup_hydrofabric_feature completed hydrofabric_id=%s",
+        "Tool lookup_hydrofabric_feature completed hydrofabric_id=%s limit=%s",
         hydrofabric_id,
+        limit,
     )
     return result

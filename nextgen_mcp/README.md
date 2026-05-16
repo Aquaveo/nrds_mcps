@@ -1,30 +1,28 @@
-# NRDS MCP Server
+# nextgen_mcp
 
-Model Context Protocol (MCP) server that exposes NRDS data tools — query output files, list available models/dates/forecasts, create charts, and query hydrofabric data.
+Source for the NRDS MCP server. For deployment, Docker, env-var, healthcheck,
+and Cloud Run documentation see the [top-level README](../README.md).
 
-## Quick Start
+## Local development (no Docker)
 
-From the `nextgen_plugins/` directory:
+From the repository root:
 
 ```bash
 ./scripts/setup-mcp.sh
 ```
 
-This creates a virtual environment at `.venv-mcp/`, installs dependencies, and starts the server on `http://0.0.0.0:9000/sse`.
+Creates `.venv-mcp/`, installs `nextgen_mcp/requirements.txt`, and starts the
+server on `http://0.0.0.0:9000/mcp` (Streamable HTTP transport, default since
+v0.1.1). Override the port with `MCP_PORT=9001 ./scripts/setup-mcp.sh`.
 
-### Setup only (no run)
-
-```bash
-./scripts/setup-mcp.sh --setup
-```
-
-### Run only (skip setup)
+### Setup only / run only
 
 ```bash
-./scripts/setup-mcp.sh --run
+./scripts/setup-mcp.sh --setup   # install deps, do not start
+./scripts/setup-mcp.sh --run     # skip install, start server
 ```
 
-### Manual setup
+### Manual
 
 ```bash
 python3 -m venv .venv-mcp
@@ -33,153 +31,78 @@ pip install -r nextgen_mcp/requirements.txt
 python -m nextgen_mcp.mcp_server
 ```
 
-## Connecting to Claude Desktop
+## Connecting an MCP client
 
-Add the following to your Claude Desktop MCP configuration file:
+With the server running on `http://localhost:9000`, point any MCP client at
+`http://localhost:9000/mcp` (Streamable HTTP). Examples:
 
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-### Option 1: SSE transport (server runs separately)
-
-Start the MCP server first, then configure Claude Desktop to connect via SSE:
-
-```json
-{
-  "mcpServers": {
-    "nrds": {
-      "transport": {
-        "type": "sse",
-        "url": "http://localhost:9000/sse"
-      }
-    }
-  }
-}
-```
-
-### Option 2: stdio transport (Claude Desktop manages the process)
-
-Claude Desktop launches and manages the MCP server process directly:
-
-```json
-{
-  "mcpServers": {
-    "nrds": {
-      "command": "/path/to/nextgen_plugins/.venv-mcp/bin/python",
-      "args": ["-m", "nextgen_mcp.mcp_server"],
-      "cwd": "/path/to/nextgen_plugins",
-      "env": {
-        "NRDS_API_HOST": "http://localhost:8000/apps/nrds/api"
-      }
-    }
-  }
-}
-```
-
-Replace `/path/to/nextgen_plugins` with the actual path (e.g., `/home/aquagio/tethysdev/firoh/plugins/nextgen_plugins`).
-
-**Note:** For stdio transport, the server needs to detect the transport mode. The current server defaults to SSE on port 9000. To use stdio, you would need to either modify `mcp_server.py` to accept a `--transport` argument or set a `MCP_TRANSPORT` environment variable.
-
-## Connecting to Claude Code (CLI)
-
-### Option 1: Via the CLI command (recommended)
-
-With the MCP server running, add it in one command:
+**Claude Code CLI:**
 
 ```bash
-claude mcp add nrds --transport sse http://localhost:9000/sse
-```
-
-This registers the server in your project config. Restart Claude Code to pick up the new tools.
-
-To verify it was added:
-
-```bash
-claude mcp list
-```
-
-To remove it later:
-
-```bash
+claude mcp add nrds --transport http http://localhost:9000/mcp
+claude mcp list      # verify
 claude mcp remove nrds
 ```
 
-### Option 2: Manual config file
-
-Add to `.mcp.json` in the project root or `~/.claude.json`:
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`
+on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
 ```json
 {
   "mcpServers": {
     "nrds": {
-      "type": "sse",
-      "url": "http://localhost:9000/sse"
+      "type": "http",
+      "url": "http://localhost:9000/mcp"
     }
   }
 }
 ```
 
-### Usage
+Legacy `/sse` is supported by setting `MCP_TRANSPORT=sse` before starting the
+server; clients then connect to `http://localhost:9000/sse`.
 
-1. Start the MCP server: `./scripts/setup-mcp.sh`
-2. In another terminal, start Claude Code: `claude`
-3. The NRDS tools are now available — ask questions like:
-   - "What models are available for NRDS?"
-   - "List available dates for cfe_nom"
-   - "Query the first output file for feature_id 1019290"
+## Environment variables
 
-## Environment Variables
+The server-relevant variables are documented in the
+[top-level README](../README.md#configuration-env-vars). The S3 bucket is
+public (`s3://ciroh-community-ngen-datastream`), so AWS credentials are
+optional in most local-dev scenarios — `boto3`/`s3fs` connect anonymously
+when no credentials are present.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NRDS_API_HOST` | `http://localhost:8000/apps/nrds/api` | NRDS REST API base URL |
-| `NRDS_LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
-| `BUCKET` | `ciroh-community-ngen-datastream` | S3 bucket for output files |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL (if using chat features) |
+## Tools
 
-## Available Tools
+The MCP tool surface is discovered automatically by clients via `tools/list`.
+The current 10 tools cover:
 
-The MCP server exposes the following tools:
+- Discovery: `list_available_models`, `list_available_dates`,
+  `list_available_forecasts`, `list_available_cycles`, `list_available_vpus`,
+  `list_available_output_files`
+- Resolution: `resolve_output_file`
+- Query: `query_output_file`, `query_output_file_from_output_selector`
+- Hydrofabric: `lookup_hydrofabric_feature`
 
-| Tool | Description |
-|------|-------------|
-| `list_available_models` | List NWM model configurations |
-| `list_available_dates` | List available forecast dates for a model |
-| `list_available_forecasts` | List forecast types (short_range, medium_range, etc.) |
-| `list_available_cycles` | List available cycles for a date |
-| `list_available_vpus` | List available VPUs for a model/date/forecast |
-| `list_available_output_files` | List output files in S3 for given parameters |
-| `get_output_file` | Get a specific output file URL |
-| `query_output_file` | Run SQL queries against parquet/netcdf output files |
-| `query_output_file_from_output_selector` | Query using model/date/forecast/cycle/vpu selectors |
-| `create_plotly_chart_from_output_file` | Generate Plotly charts from output file queries |
-| `create_plotly_chart_from_output_selector` | Generate charts using output selectors |
-| `query_hydrofabric_parquet_file` | Query hydrofabric parquet data |
-| `build_hydrofabric_feature_map_config` | Build map configurations for hydrofabric features |
+All tools return data only — no Plotly figure JSON or map config blobs.
+Charts and maps are the host's responsibility.
 
-## Docker Alternative
-
-If you prefer Docker, use the devcontainer setup:
-
-```bash
-cd .devcontainer
-docker compose -f docker-compose.dev.yml up mcp
-```
-
-This runs the MCP server on `http://localhost:9000/sse` with all dependencies pre-installed.
-
-## Project Structure
+## Project structure
 
 ```
 nextgen_mcp/
   __init__.py
-  mcp_server.py      # MCP server entry point (FastMCP + tool definitions)
-  utils.py            # Helper functions, REST API bridge
-  validation.py       # Pydantic and Literal validators (normalize_vpu, OutputsFilesQuery)
-  rest.py             # REST API wrappers (S3, DuckDB, output file queries)
-  utils_rest.py       # Low-level utilities (DuckDB queries, Plotly chart generation)
-  requirements.txt    # Python dependencies
-  README.md           # This file
-scripts/
-  setup-mcp.sh        # One-command setup + run script
+  mcp_server.py       # Server entry point
+  _mcp.py             # FastMCP instance, middleware registration, /health route
+  _io_config.py       # S3 filesystem + URL constants
+  _helpers.py         # Tool-body helpers (date parsing, validation guards)
+  tools.py            # @mcp.tool definitions
+  prompts.py          # @mcp.prompt slash-command templates
+  logic.py            # Core data logic (S3 listing, DuckDB queries)
+  utils.py            # Endpoint-dispatch bridge, label/id helpers
+  utils_rest.py       # DuckDB / parquet / netCDF helpers, error classifiers
+  validation.py       # Pydantic models, Literal types, normalize_* helpers
+  middleware/
+    _input_validation_middleware.py
+    _observability_middleware.py
+  requirements.txt
+  requirements.lock
+  README.md           # this file
 ```

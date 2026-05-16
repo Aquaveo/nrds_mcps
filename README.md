@@ -2,7 +2,7 @@
 
 [Model Context Protocol](https://modelcontextprotocol.io) server exposing **data-only** NRDS tools — query S3-backed output files, list available models / dates / forecasts, look up hydrofabric features. Pair with a host that owns rendering (charts, maps, tables); this server returns rows and metadata only and does not produce host-renderable payloads.
 
-Built on [FastMCP](https://github.com/jlowin/fastmcp) with SSE transport.
+Built on [FastMCP](https://github.com/jlowin/fastmcp) with Streamable HTTP transport (default since v0.1.1; legacy SSE supported via `MCP_TRANSPORT=sse`).
 
 ## Quick Start (Docker)
 
@@ -24,8 +24,8 @@ Verify it's running:
 curl -fsS http://localhost:9000/health
 # {"status":"ok"}
 ```
-=
-Connect an MCP client to `http://<host>:9000/mcp` (Streamable HTTP transport, default since v0.1.1;
+
+Connect an MCP client to `http://<host>:9000/mcp` (Streamable HTTP transport, default since v0.1.1; legacy `/sse` returns 404).
 
 ## Image Tags
 
@@ -125,7 +125,7 @@ The workflow:
 3. Runs `gcloud run deploy` against `us-central1-docker.pkg.dev/ibis-436806/nrds-mcps-remote/aquaveo/nrds-mcps:0.2.0` (the AR remote repo proxies ghcr.io transparently).
 4. Cloud Run's startup probe on `/health` gates traffic-shift — a buggy revision is provisioned but never gets traffic.
 5. Workflow polls `/health` (120 s window) for forensic confirmation.
-6. **Workflow probes MCP `tools/list` via FastMCP client** and asserts at least 13 tools registered. Catches tool-init crashes that leave `/health` green but the MCP tool registry empty or short. Threshold is configured in `release.yml` as `EXPECTED_MIN_TOOLS` — bump in lockstep when adding/removing tools.
+6. **Workflow probes MCP `tools/list` via FastMCP client** and asserts at least 10 tools registered. Catches tool-init crashes that leave `/health` green but the MCP tool registry empty or short. Threshold is configured in `release.yml` as `EXPECTED_MIN_TOOLS` — bump in lockstep when adding/removing tools.
 
 If steps 1-5 fail, the previous revision keeps 100% traffic — **failed deploys are non-destructive** at the traffic-shift level. Step 6 (MCP smoke) runs *after* traffic has already flipped, so a failure there means the new revision is broken AND receiving traffic. Recovery is manual rollback: `gcloud run services update-traffic nrds-mcps --region=us-central1 --to-revisions=<previous-revision>=100`.
 

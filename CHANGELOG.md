@@ -7,6 +7,59 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed (BREAKING — tool surface)
+
+- **`query_hydrofabric_parquet_file` is removed.** Its hydrofabric-id
+  search overlapped almost entirely with `lookup_hydrofabric_feature`
+  (same parquet, same `id`/`divide_id` match-ranking SQL); the only
+  meaningful differences were the output envelope shape and the row
+  limit. The merged tool keeps `lookup_hydrofabric_feature`'s
+  data-only envelope (`{rows, pmtiles_layer, bbox}`) and grows a
+  `limit` argument (default `1`, max `200`) for callers that need
+  more than one match.
+
+### Changed
+
+- `lookup_hydrofabric_feature` accepts an optional `limit: int`
+  argument (default `1`, range `1..200`). Previous behavior is
+  preserved when callers omit `limit`.
+- `prompts/list` drops the `query_hydrofabric` slash-command template
+  (it drove the removed tool); use `lookup_feature` instead.
+- `EXPECTED_MIN_TOOLS` in `release.yml` bumped 11 → 10.
+
+### Removed
+
+- **`test_mcp/test_large_catalog_server.py` is removed.** The fixture
+  was a standalone runnable for exercising FastMCP's
+  `BM25SearchTransform` search-facade against a synthetic large tool
+  catalog. Long-catalog handling now lives on the client side, so the
+  server has no search-facade surface to load-test.
+- BM25-related comment in
+  `nextgen_mcp/middleware/_input_validation_middleware.py` simplified
+  — the underlying rationale (MCP protocol already associates tool
+  result with call) stands; the search-facade leak motivation no
+  longer applies.
+
+### Fixed
+
+- Pre-existing relative-import typo (`..middleware`) in `_mcp.py`,
+  `_helpers.py`, and `tools.py` corrected to `.middleware`. The
+  middleware package is a subpackage of `nextgen_mcp/`, not a sibling.
+- Stale `from middleware._input_validation_middleware import …` paths
+  in `test_mcp/test_middleware.py` updated to
+  `from nextgen_mcp.middleware._input_validation_middleware import …`.
+- README dead references cleaned up: top-level README had a stray
+  `=`, an unclosed parenthesis, and a "13 tools" smoke-gate count
+  that drifted from `release.yml`. `nextgen_mcp/README.md` was
+  rewritten as a short dev-loop pointer to the canonical top-level
+  README — old content referenced the pre-2026-05-02 `nextgen_plugins/`
+  layout, a `/sse` default, dead `NRDS_API_HOST`/`OLLAMA_HOST` env
+  vars, removed `create_plotly_chart_*` tools, and a `.devcontainer/`
+  directory that no longer exists in this repo.
+- `validators.py` and `validations.py` merged into a single
+  `validation.py`. The duplicate `Forecasts` / `FORECASTS` `Literal`
+  collapsed to one canonical `FORECASTS`.
+
 ## [0.2.0] — 2026-05-04
 
 ### Removed (BREAKING — tool surface)

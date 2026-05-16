@@ -15,7 +15,6 @@ from .logic import (
     get_output_file,
     query_output_file,
     query_output_file_from_output_selector,
-    query_hydrofabric_parquet_file,
     lookup_hydrofabric_feature,
 )
 
@@ -66,15 +65,10 @@ def _get_json_raw(endpoint_key: str, params: Optional[Dict[str, Any]] = None, **
             index=p.get("index"),
         )
 
-    if endpoint_key == "query_hydrofabric_parquet_file":
-        return query_hydrofabric_parquet_file(
-            hydrofabric_id=p["hydrofabric_id"],
-            limit=p["limit"]
-        )
-    
     if endpoint_key == "lookup_hydrofabric_feature":
         return lookup_hydrofabric_feature(
             hydrofabric_id=p["hydrofabric_id"],
+            limit=p.get("limit", 1),
         )
 
     raise KeyError(f"Unknown endpoint_key: {endpoint_key}")

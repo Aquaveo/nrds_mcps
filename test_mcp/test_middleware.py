@@ -421,7 +421,7 @@ def test_describe_other_errors_per_error_type(err_dict, expected_substr):
     to phrase. A typo in a ctx-key name (e.g. `min_length` -> `minimum`)
     or a wrong operator symbol would fail one of these.
     """
-    from middleware._input_validation_middleware import _describe_other_errors
+    from nextgen_mcp.middleware._input_validation_middleware import _describe_other_errors
 
     result = _describe_other_errors([err_dict])
     assert expected_substr in result, (
@@ -438,7 +438,7 @@ def test_describe_other_errors_unknown_type_returns_empty():
     pins that contract so a future change can't accidentally produce a
     misleading phrase for an unrecognized type.
     """
-    from middleware._input_validation_middleware import _describe_other_errors
+    from nextgen_mcp.middleware._input_validation_middleware import _describe_other_errors
 
     result = _describe_other_errors(
         [
@@ -461,7 +461,7 @@ def test_describe_other_errors_mixed_known_and_unknown():
     later want to surface "and N other unphrased errors" we'd change this
     test.
     """
-    from middleware._input_validation_middleware import _describe_other_errors
+    from nextgen_mcp.middleware._input_validation_middleware import _describe_other_errors
 
     result = _describe_other_errors(
         [
@@ -491,7 +491,7 @@ def test_describe_other_errors_accepts_flattened_post_summarize_shape():
     swaps the call site to pass `_summarize_errors(others)` doesn't
     silently break the phrasing.
     """
-    from middleware._input_validation_middleware import _describe_other_errors
+    from nextgen_mcp.middleware._input_validation_middleware import _describe_other_errors
 
     flattened = {
         "field": "date",
@@ -512,7 +512,7 @@ def test_summarize_errors_carries_ctx_for_each_allowlist_entry():
     so that drift fails CI instead of degrading the LLM's recovery
     information silently.
     """
-    from middleware._input_validation_middleware import _summarize_errors
+    from nextgen_mcp.middleware._input_validation_middleware import _summarize_errors
 
     cases: list[tuple[dict[str, object], str, object]] = [
         ({"type": "string_pattern_mismatch", "loc": ("d",), "ctx": {"pattern": "^x$"}}, "pattern", "^x$"),
@@ -543,7 +543,7 @@ def test_summarize_errors_omits_unallowlisted_ctx_keys():
     (and any other ctx fields that could leak user-supplied content).
     This test pins that filter.
     """
-    from middleware._input_validation_middleware import _summarize_errors
+    from nextgen_mcp.middleware._input_validation_middleware import _summarize_errors
 
     summary = _summarize_errors(
         [
@@ -572,7 +572,7 @@ def test_build_fix_hint_falls_back_on_unknown_only():
     The generic hint ("Fix the type / value errors listed in `details`")
     must still appear so the LLM knows to inspect details.
     """
-    from middleware._input_validation_middleware import _build_fix_hint
+    from nextgen_mcp.middleware._input_validation_middleware import _build_fix_hint
 
     hint = _build_fix_hint(
         unexpected=[],

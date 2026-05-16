@@ -10,10 +10,8 @@ import xarray as xr
 from ._io_config import HYDROFABRIC_INDEX_URL, duckdb_connect_with_httpfs, open_fsspec_file
 
 
-# Per-code sanitized message + fix_hint. NEVER use str(exc) directly — the
-# raw message from botocore.ClientError often embeds AWS account IDs, S3
-# bucket names, ARNs, and request IDs; from duckdb.IOException it can
-# embed full presigned URLs. The LLM-facing envelope sees the sanitized
+# Per-code sanitized message + fix_hint. NEVER use str(exc) directly — 
+# The LLM-facing envelope sees the sanitized
 # message only; the full str(exc) is logged at WARNING+ for operators.
 _IO_ERROR_CATALOG = {
     "timeout": (
@@ -80,6 +78,7 @@ HYDROFABRIC_LAYER_CONFIG = {
         "default_zoom": 12,
     },
 }
+
 # Regex to pull DuckDB's "Candidate bindings:" column suggestions out of
 # a BinderException message. Format observed:
 #     Binder Error: Referenced column "X" not found in FROM clause!
@@ -145,8 +144,7 @@ def _is_duckdb_programmer_error(exc: BaseException) -> bool:
     Wrong-column / malformed-SQL / missing-table errors in OUR hardcoded
     SQL should crash visibly so they're discoverable in observability logs,
     not normalized to a polite envelope. CRITICAL: this guard applies ONLY
-    to hardcoded-SQL call sites (e.g. _duckdb_query_hydrofabric_parquet,
-    _duckdb_lookup_hydrofabric_feature).
+    to hardcoded-SQL call sites (e.g. _duckdb_lookup_hydrofabric_feature).
 
     For LLM-supplied-SQL call sites (query_output_file's `query` arg), use
     ``_classify_llm_sql_error`` instead — the LLM CAN recover from these
@@ -374,79 +372,10 @@ def _get_feature_center(row: Dict[str, Any]) -> Optional[list]:
 
     return None
 
-def _duckdb_lookup_hydrofabric_feature(hydrofabric_id: str) -> pd.DataFrame:
-    con = duckdb_connect_with_httpfs()
-    try:
-        con.execute(
-            f"""
-            CREATE OR REPLACE TEMP VIEW output AS
-            SELECT *
-            FROM read_parquet('{HYDROFABRIC_INDEX_URL}')
-            """
-        )
-
-        sql = """
-        WITH matches AS (
-            SELECT
-                *,
-                CASE
-                    WHEN lower(coalesce(id, '')) = lower(?) THEN 0
-                    WHEN lower(coalesce(divide_id, '')) = lower(?) THEN 1
-                    WHEN lower(coalesce(id, '')) LIKE '%' || lower(?) || '%' THEN 2
-                    WHEN lower(coalesce(divide_id, '')) LIKE '%' || lower(?) || '%' THEN 3
-                    ELSE 4
-                END AS match_rank,
-                CASE
-                    WHEN lower(coalesce(id, '')) = lower(?) THEN 'id'
-                    WHEN lower(coalesce(divide_id, '')) = lower(?) THEN 'divide_id'
-                    WHEN lower(coalesce(id, '')) LIKE '%' || lower(?) || '%' THEN 'id'
-                    WHEN lower(coalesce(divide_id, '')) LIKE '%' || lower(?) || '%' THEN 'divide_id'
-                    ELSE NULL
-                END AS matched_column,
-                CASE
-                    WHEN lower(coalesce(id, '')) = lower(?) THEN 'exact'
-                    WHEN lower(coalesce(divide_id, '')) = lower(?) THEN 'exact'
-                    WHEN lower(coalesce(id, '')) LIKE '%' || lower(?) || '%' THEN 'substring'
-                    WHEN lower(coalesce(divide_id, '')) LIKE '%' || lower(?) || '%' THEN 'substring'
-                    ELSE NULL
-                END AS match_type
-            FROM output
-        )
-        SELECT * EXCLUDE (match_rank)
-        FROM matches
-        WHERE match_rank < 4
-        ORDER BY match_rank, id, divide_id
-        LIMIT 1
-        """
-
-        params = [hydrofabric_id] * 12
-        return con.execute(sql, params).df()
-
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
-
-def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
-    """Load the t-route crosswalk DataFrame.
-
-    Uses ``open_fsspec_file`` so the timeout-configured fsspec client
-    reaches the underlying h5netcdf transport. ``xarray.open_dataset``
-    cannot be called directly on a URL with a custom fsspec config — the
-    OpenFile context manager handles that.
-    """
-
-    with open_fsspec_file(s3_nc_url) as f:
-        nc_xarray = xr.open_dataset(f, engine="h5netcdf")
-        nc_df = nc_xarray.to_dataframe()
-        nc_df = nc_df.reset_index()
-
-    return nc_df
-
-def _duckdb_query_hydrofabric_parquet(hydrofabric_id: str, limit: int = 50) -> pd.DataFrame:
+def _duckdb_lookup_hydrofabric_feature(
+    hydrofabric_id: str, limit: int = 1
+) -> pd.DataFrame:
     """Lookup hydrofabric rows by id/divide_id using exact and substring matching."""
-
     con = duckdb_connect_with_httpfs()
     try:
         con.execute(
@@ -493,11 +422,29 @@ def _duckdb_query_hydrofabric_parquet(hydrofabric_id: str, limit: int = 50) -> p
 
         params = [hydrofabric_id] * 12 + [limit]
         return con.execute(sql, params).df()
+
     finally:
         try:
             con.close()
         except Exception:
             pass
+
+def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
+    """Load the t-route crosswalk DataFrame.
+
+    Uses ``open_fsspec_file`` so the timeout-configured fsspec client
+    reaches the underlying h5netcdf transport. ``xarray.open_dataset``
+    cannot be called directly on a URL with a custom fsspec config — the
+    OpenFile context manager handles that.
+    """
+
+    with open_fsspec_file(s3_nc_url) as f:
+        nc_xarray = xr.open_dataset(f, engine="h5netcdf")
+        nc_df = nc_xarray.to_dataframe()
+        nc_df = nc_df.reset_index()
+
+    return nc_df
+
 
 def _duckdb_query_parquet(file_url: str, query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query against a parquet file exposed as temp view `output`."""

@@ -238,7 +238,7 @@ def test_query_hydrofabric_returns_envelope_on_duckdb_io_error(
     mock_duckdb_connect_io_error,
 ):
     """DuckDB IOException -> upstream_error envelope."""
-    result = logic.query_hydrofabric_parquet_file("wb-1019290")
+    result = logic.lookup_hydrofabric_feature("wb-1019290")
     assert result.get("ok") is False
     assert result["error"]["code"] == "upstream_error"
     assert "fix_hint" in result
@@ -254,7 +254,7 @@ def test_query_hydrofabric_reraises_duckdb_binder_error(mock_duckdb_binder_error
     import pytest as _pytest
 
     with _pytest.raises(duckdb.BinderException):
-        logic.query_hydrofabric_parquet_file("wb-1019290")
+        logic.lookup_hydrofabric_feature("wb-1019290")
 
 
 # ---------------------------------------------------------------------------

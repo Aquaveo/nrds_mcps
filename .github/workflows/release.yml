@@ -203,7 +203,7 @@ jobs:
           URL: ${{ steps.deploy.outputs.url }}
           # Defensive lower bound; the load-bearing assertions below are
           # the explicit name-absence and name-presence checks.
-          EXPECTED_MIN_TOOLS: '11'
+          EXPECTED_MIN_TOOLS: '10'
         run: |
           set -euo pipefail
           python <<'PY'
@@ -221,6 +221,7 @@ jobs:
               "create_plotly_chart_from_output_selector",
               "create_plotly_chart_from_parquet_output_file",
               "build_hydrofabric_feature_map_config",
+              "query_hydrofabric_parquet_file",
           )
 
           # Names that must exist (renamed-and-reshaped surface from

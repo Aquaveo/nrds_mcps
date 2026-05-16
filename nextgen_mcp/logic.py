@@ -26,7 +26,6 @@ from .utils_rest import (
     _duckdb_query_parquet,
     _duckdb_query_netcdf,
     _get_troute_df,
-    _duckdb_query_hydrofabric_parquet,
     _duckdb_lookup_hydrofabric_feature,
     _normalize_record,
     _get_feature_center,
@@ -563,70 +562,6 @@ def query_output_file_from_output_selector(
     return query_result
 
 
-def query_hydrofabric_parquet_file(hydrofabric_id: str, limit: int = 50) -> Dict:
-    """Run a hydrofabric id lookup against the hydrofabric parquet file on S3."""
-    logger.info(
-        "Received request to query hydrofabric with hydrofabric_id=%s limit=%s",
-        hydrofabric_id,
-        limit,
-    )
-
-    hydrofabric_id = (hydrofabric_id or "").strip()
-    if not hydrofabric_id:
-        return _error_payload(
-            "bad_request",
-            "hydrofabric_id is required",
-            file=HYDROFABRIC_INDEX_URL,
-            hydrofabric_id=hydrofabric_id,
-            columns=[],
-            rows=0,
-            data=[],
-        )
-
-    try:
-        df = _duckdb_query_hydrofabric_parquet(hydrofabric_id=hydrofabric_id, limit=limit)
-        logger.info(
-            "Hydrofabric query returned %s rows and columns: %s",
-            len(df),
-            df.columns.tolist(),
-        )
-        return _success_payload(
-            file=HYDROFABRIC_INDEX_URL,
-            hydrofabric_id=hydrofabric_id,
-            columns=list(df.columns),
-            rows=int(len(df)),
-            data=df.to_dict(orient="records"),
-        )
-    except (OSError, ClientError, duckdb.Error) as e:
-        if _is_duckdb_programmer_error(e):
-            raise
-        code, msg, fix_hint = _classify_io_error(e)
-        logger.error(
-            "IO error %s on hydrofabric parquet %s: %s",
-            type(e).__name__,
-            HYDROFABRIC_INDEX_URL,
-            e,
-        )
-        if code == "not_found":
-            return _error_payload(
-                code,
-                msg,
-                fix_hint=fix_hint,
-                file=HYDROFABRIC_INDEX_URL,
-                hydrofabric_id=hydrofabric_id,
-                columns=[],
-                rows=0,
-                data=[],
-            )
-        return _error_payload(
-            code,
-            msg,
-            fix_hint=fix_hint,
-            file=HYDROFABRIC_INDEX_URL,
-            hydrofabric_id=hydrofabric_id,
-        )
-
-
 def _bbox_from_row(row: Dict[str, Any]) -> Optional[List[float]]:
     """Compute a [minLon, minLat, maxLon, maxLat] bbox from a hydrofabric row.
 
@@ -654,13 +589,15 @@ def _bbox_from_row(row: Dict[str, Any]) -> Optional[List[float]]:
     return None
 
 
-def lookup_hydrofabric_feature(hydrofabric_id: str) -> Dict[str, Any]:
-    """Look up one hydrofabric feature by id and return data only.
+def lookup_hydrofabric_feature(
+    hydrofabric_id: str, limit: int = 1
+) -> Dict[str, Any]:
+    """Look up hydrofabric features by id and return data only.
 
     Returns a flat shape:
-      - rows: list of matching rows from the hydrofabric index
-      - pmtiles_layer: the PMTiles layer name associated with the feature, or None
-      - bbox: [minLon, minLat, maxLon, maxLat] bounding the feature, or None
+      - rows: list of matching rows from the hydrofabric index (up to ``limit``)
+      - pmtiles_layer: the PMTiles layer name associated with the top match, or None
+      - bbox: [minLon, minLat, maxLon, maxLat] bounding the top match, or None
 
     On empty match: rows=[], pmtiles_layer=None, bbox=None.
     The host is responsible for assembling any map view from this data.
@@ -676,7 +613,7 @@ def lookup_hydrofabric_feature(hydrofabric_id: str) -> Dict[str, Any]:
         )
 
     try:
-        df = _duckdb_lookup_hydrofabric_feature(hydrofabric_id)
+        df = _duckdb_lookup_hydrofabric_feature(hydrofabric_id, limit=limit)
         if df.empty:
             return _success_payload(
                 rows=[],
