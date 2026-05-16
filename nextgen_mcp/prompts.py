@@ -67,7 +67,7 @@ def plot_timeseries(
 
 
 # ---------------------------------------------------------------------------
-# Discovery prompt templates (Phase 2a) — one per list_available_* tool plus
+# Discovery prompt templates — one per list_available_* tool plus
 # a zero-arg list_models entry.
 #
 # Pattern mirrors plot_timeseries above:
@@ -188,7 +188,7 @@ def list_output_files(
 
 
 # ---------------------------------------------------------------------------
-# Query/lookup prompt templates (Phase 2b) — one per query/lookup tool plus
+# Query/lookup prompt templates — one per query/lookup tool plus
 # a second variant for resolve_output_file's XOR.
 #
 # Pattern mirrors the discovery prompts above:
