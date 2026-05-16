@@ -3,7 +3,7 @@
 Emits a single structured log line per ``tools/call`` request on the
 ``nextgen_mcp`` logger. The line collapses entry + exit into one
 record so a debugger reading server logs can see at a glance which
-tool ran, what kwargs the LLM supplied (key names only — no values
+tool ran, what kwargs the LLM supplied (key names only - no values
 to avoid leaking user input), whether it succeeded, what error class
 fired if not, and how long it took.
 
@@ -21,14 +21,14 @@ Format:
     duration_ms=<ms> [extra_kvs...]
 
 Status values:
-- ``ok`` — tool executed and returned a non-error envelope.
-- ``error`` — tool returned ``{"error": "..."}`` envelope (business-logic
+- ``ok`` - tool executed and returned a non-error envelope.
+- ``error`` - tool returned ``{"error": "..."}`` envelope (business-logic
   rejection: invalid_uuid, whitelist_rejected, invalid_envelope, etc.).
-- ``invalid_args`` — input-validation middleware caught a Pydantic
+- ``invalid_args`` - input-validation middleware caught a Pydantic
   ValidationError; envelope shape is the
   ``InputValidationEnvelopeMiddleware`` typed envelope.
 
-Arg values are NEVER logged — only the sorted list of arg keys. This
+Arg values are NEVER logged - only the sorted list of arg keys. This
 keeps secrets, large payloads, and PII out of the log surface.
 
 Sibling to ``_input_validation_middleware.py``. Both should be
@@ -61,7 +61,7 @@ class ToolCallObservabilityMiddleware(Middleware):
     """Single structured log line per ``tools/call`` request.
 
     Catches exceptions from inner middleware/tool execution so the log
-    line is emitted even when the call doesn't return cleanly — then
+    line is emitted even when the call doesn't return cleanly - then
     re-raises so error semantics are unchanged. The log line is the
     only side-effect of this middleware; it does NOT modify the
     request, response, or exception.
@@ -129,7 +129,7 @@ def _short_session_id(context: MiddlewareContext[Any]) -> str:
         return "-"
     try:
         sid = fastmcp_ctx.session_id
-    except Exception:  # pragma: no cover — defensive
+    except Exception:  # pragma: no cover - defensive
         return "-"
     if not sid:
         return "-"

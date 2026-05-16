@@ -66,7 +66,7 @@ server; clients then connect to `http://localhost:9000/sse`.
 The server-relevant variables are documented in the
 [top-level README](../README.md#configuration-env-vars). The S3 bucket is
 public (`s3://ciroh-community-ngen-datastream`), so AWS credentials are
-optional in most local-dev scenarios — `boto3`/`s3fs` connect anonymously
+optional in most local-dev scenarios - `boto3`/`s3fs` connect anonymously
 when no credentials are present.
 
 ## Tools
@@ -81,7 +81,7 @@ The current 10 tools cover:
 - Query: `query_output_file`, `query_output_file_from_output_selector`
 - Hydrofabric: `lookup_hydrofabric_feature`
 
-All tools return data only — no Plotly figure JSON or map config blobs.
+All tools return data only - no Plotly figure JSON or map config blobs.
 Charts and maps are the host's responsibility.
 
 ## Project structure
@@ -95,7 +95,7 @@ nextgen_mcp/
   tools.py            # @mcp.tool definitions
   prompts.py          # @mcp.prompt slash-command templates
   logic.py            # Core data logic (S3 listing, DuckDB queries)
-  utils.py            # Tool-body helpers — date parsing, validation guards,
+  utils.py            # Tool-body helpers - date parsing, validation guards,
                       # id/label normalization, payload reshaping
   utils_rest.py       # DuckDB / parquet / netCDF helpers, error classifiers
   validation.py       # Pydantic models, Literal types, normalize_* helpers

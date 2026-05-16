@@ -6,8 +6,8 @@ slow/failing S3 without hitting live infrastructure.
 
 The fixtures patch the helper functions (``s3_filesystem``,
 ``duckdb_connect_with_httpfs``, ``open_fsspec_file``) at their
-import sites in ``rest.py`` and ``utils_rest.py`` — not the underlying
-``fsspec`` / ``duckdb`` / ``xarray`` modules — because the production
+import sites in ``rest.py`` and ``utils_rest.py`` - not the underlying
+``fsspec`` / ``duckdb`` / ``xarray`` modules - because the production
 code imports the helpers, not the underlying modules. Patching at the
 helper layer guarantees every IO site is covered.
 """
@@ -23,7 +23,7 @@ import pytest
 class _MockFsspecFilesystem:
     """Stand-in for an fsspec S3 filesystem that raises on every operation.
 
-    Configured via ``raise_with`` — an exception instance to raise on
+    Configured via ``raise_with`` - an exception instance to raise on
     each method call. Mirrors the public surface used by ``rest.py``
     (``ls`` is the primary call; ``exists``, ``open`` etc. are stubbed
     out for completeness).
@@ -55,19 +55,19 @@ def _install_fsspec_fault(monkeypatch: pytest.MonkeyPatch, exc: Exception):
 
 @pytest.fixture
 def mock_fsspec_timeout(monkeypatch: pytest.MonkeyPatch):
-    """fs.ls raises TimeoutError — simulates a hung S3 read that hit the budget."""
+    """fs.ls raises TimeoutError - simulates a hung S3 read that hit the budget."""
     _install_fsspec_fault(monkeypatch, TimeoutError("simulated read timeout"))
 
 
 @pytest.fixture
 def mock_fsspec_permission_denied(monkeypatch: pytest.MonkeyPatch):
-    """fs.ls raises PermissionError — simulates AccessDenied on anonymous S3."""
+    """fs.ls raises PermissionError - simulates AccessDenied on anonymous S3."""
     _install_fsspec_fault(monkeypatch, PermissionError("simulated access denied"))
 
 
 @pytest.fixture
 def mock_fsspec_connection_error(monkeypatch: pytest.MonkeyPatch):
-    """fs.ls raises ConnectionError — simulates network-layer failure."""
+    """fs.ls raises ConnectionError - simulates network-layer failure."""
     _install_fsspec_fault(
         monkeypatch, ConnectionError("simulated connection error")
     )
@@ -75,7 +75,7 @@ def mock_fsspec_connection_error(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def mock_fsspec_not_found(monkeypatch: pytest.MonkeyPatch):
-    """fs.ls raises FileNotFoundError — simulates a missing S3 prefix."""
+    """fs.ls raises FileNotFoundError - simulates a missing S3 prefix."""
     _install_fsspec_fault(monkeypatch, FileNotFoundError("simulated not found"))
 
 
@@ -102,7 +102,7 @@ def mock_fsspec_empty_ls(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def mock_fsspec_botocore_client_error(monkeypatch: pytest.MonkeyPatch):
-    """fs.ls raises botocore.exceptions.ClientError — simulates an AWS API error."""
+    """fs.ls raises botocore.exceptions.ClientError - simulates an AWS API error."""
     from botocore.exceptions import ClientError
 
     err = ClientError(
@@ -136,7 +136,7 @@ def mock_duckdb_connect_io_error(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def mock_duckdb_binder_error(monkeypatch: pytest.MonkeyPatch):
-    """DuckDB query raises BinderException — programmer error class.
+    """DuckDB query raises BinderException - programmer error class.
 
     These MUST be re-raised, not caught as execution_error, per the plan.
     """

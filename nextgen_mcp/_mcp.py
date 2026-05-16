@@ -26,6 +26,6 @@ async def health_check(_request: Request) -> JSONResponse:
     """Liveness probe used by Docker HEALTHCHECK and container orchestrators.
 
     Returns 200 with a minimal payload. Does not exercise downstream
-    dependencies (S3, etc.) — keep it cheap so polling stays free.
+    dependencies (S3, etc.) - keep it cheap so polling stays free.
     """
     return JSONResponse({"status": "ok"})

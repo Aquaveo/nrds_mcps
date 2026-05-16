@@ -34,7 +34,7 @@ def plot_timeseries(
     defaults; each carries a ``Field(description=...)`` advertising
     the valid format or enum (e.g., ``cfe_nom / lstm / routing_only``,
     ``yyyy-mm-dd``). Calling ``prompts/get(name, {})`` with empty args
-    deliberately raises a ``-32602 Invalid arguments`` error — the
+    deliberately raises a ``-32602 Invalid arguments`` error - the
     standard MCP wire shape used by third-party servers.
 
     Slash-command UX: ``chatbox-core`` synthesizes
@@ -52,7 +52,7 @@ def plot_timeseries(
     Argument names ``model``, ``forecast``, ``date``, ``cycle``, ``vpu``,
     and ``index`` align with the selector args of
     ``query_output_file_from_output_selector``. ``variable`` and
-    ``feature_id`` are narrative-only — they help the LLM build the
+    ``feature_id`` are narrative-only - they help the LLM build the
     DuckDB ``query`` value but have no first-class counterpart in the
     selector tool's schema.
     """
@@ -67,19 +67,19 @@ def plot_timeseries(
 
 
 # ---------------------------------------------------------------------------
-# Discovery prompt templates — one per list_available_* tool plus
+# Discovery prompt templates - one per list_available_* tool plus
 # a zero-arg list_models entry.
 #
 # Pattern mirrors plot_timeseries above:
 #   - Argument names mirror the underlying tool's argument names exactly.
-#   - Each routing arg is required:true on the prompt (per plan R6, even
-#     when the underlying tool would default; editors should be explicit
-#     about routing decisions when invoking a slash command).
+#   - Each routing arg is required:true on the prompt even when the
+#     underlying tool would default it. Editors should be explicit
+#     about routing decisions when invoking a slash command.
 #   - Hint copy is drawn from canonical Literal types in validation.py
 #     (MODELS, FORECASTS, DATE_PATTERN). LOCKSTEP RULE: when validation.py
 #     adds a new model, forecast, or vpu format, update both the tool's
 #     Field(description=...) AND the @mcp.prompt arg description here.
-#   - Prose is imperative declarative ("List the available …"); verb-first
+#   - Prose is imperative declarative ("List the available ..."); verb-first
 #     matches the underlying tool-name verb and gives small models a clean
 #     syntactic anchor.
 # ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ def plot_timeseries(
 def list_models() -> str:
     """List the available NRDS models.
 
-    Drives the ``list_available_models`` tool. Zero-arg by design — the
+    Drives the ``list_available_models`` tool. Zero-arg by design - the
     underlying tool takes no arguments. FastMCP 3.2.4 silently ignores
     extra kwargs on no-arg prompts (test pinned).
     """
@@ -117,8 +117,8 @@ def list_forecasts(
 
     Drives the ``list_available_forecasts`` tool. ``date`` is defaultable
     in the tool (server-side defaults to today via ``_parse_date_or_today``)
-    but is surfaced as required on the prompt per plan R6 — editors
-    should be explicit about routing.
+    but is surfaced as required on the prompt so editors are explicit
+    about routing.
     """
     return f"List the available forecasts for the {model} model on {date}."
 
@@ -134,7 +134,8 @@ def list_cycles(
     """List the available cycles for a given NRDS model, date, and forecast.
 
     Drives the ``list_available_cycles`` tool. ``date`` is defaultable in
-    the tool but surfaced as required here per plan R6.
+    the tool but surfaced as required here so editors are explicit
+    about routing.
     """
     return (
         f"List the available cycles for the {model} model on {date}, "
@@ -154,7 +155,8 @@ def list_vpus(
     """List the available VPUs for a given NRDS model, date, forecast, and cycle.
 
     Drives the ``list_available_vpus`` tool. ``date`` and ``cycle`` are
-    defaultable in the tool but surfaced as required here per plan R6.
+    defaultable in the tool but surfaced as required here so editors
+    are explicit about routing.
     """
     return (
         f"List the available VPUs for the {model} model on {date}, "
@@ -176,10 +178,10 @@ def list_output_files(
     cycle, and VPU.
 
     Drives the ``list_available_output_files`` tool. ``date`` and ``cycle``
-    are defaultable in the tool but surfaced as required here per plan R6.
-    The optional ``ensemble`` arg is intentionally not surfaced — only
-    required-shaped routing args appear on the prompt (see plan Scope
-    Boundaries: "No optional-argument hint surfaces").
+    are defaultable in the tool but surfaced as required here so editors
+    are explicit about routing. The optional ``ensemble`` arg is
+    intentionally not surfaced - only required-shaped routing args
+    appear on the prompt.
     """
     return (
         f"List the available output files for the {model} model on {date}, "
@@ -188,18 +190,18 @@ def list_output_files(
 
 
 # ---------------------------------------------------------------------------
-# Query/lookup prompt templates — one per query/lookup tool plus
+# Query/lookup prompt templates - one per query/lookup tool plus
 # a second variant for resolve_output_file's XOR.
 #
 # Pattern mirrors the discovery prompts above:
 #   - Argument names mirror the underlying tool's argument names exactly.
-#   - All routing args are required:true on the prompt (per plan R6).
+#   - All routing args are required:true on the prompt.
 #   - Hint copy is drawn from the underlying tool's Field(description=...);
 #     LOCKSTEP RULE: when the tool's description changes, update both the
 #     tool and the @mcp.prompt arg description here.
 #   - Prose is imperative declarative.
 #   - The two resolve_file_* variants split the file_name XOR index
-#     constraint so the user picks intent at the slash level — see each
+#     constraint so the user picks intent at the slash level - see each
 #     variant's "do NOT also supply" instruction.
 # ---------------------------------------------------------------------------
 
@@ -268,9 +270,10 @@ def resolve_file_by_index(
 
     Drives the ``resolve_output_file`` tool. The XOR constraint on
     ``resolve_output_file`` (file_name XOR index) is resolved at the
-    slash level — this variant supplies ``index`` and the LLM should NOT
+    slash level - this variant supplies ``index`` and the LLM should NOT
     also supply ``file_name``. ``index`` defaults to 0 on the underlying
-    tool but is surfaced as required on the prompt per plan R6.
+    tool but is surfaced as required on the prompt so editors are
+    explicit about routing.
     """
     return (
         f"Resolve the output file by index {index} for the {model} model "
@@ -297,7 +300,7 @@ def resolve_file_by_name(
 
     Drives the ``resolve_output_file`` tool. The XOR constraint on
     ``resolve_output_file`` (file_name XOR index) is resolved at the
-    slash level — this variant supplies ``file_name`` and the LLM should
+    slash level - this variant supplies ``file_name`` and the LLM should
     NOT also supply ``index``. The underlying tool's ``index`` defaults
     to 0 (not None), so explicitly passing both file_name and index would
     fail the XOR check; the docstring instruction tells the LLM to omit

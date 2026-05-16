@@ -57,7 +57,7 @@ def list_available_models_tool() -> Dict[str, Any]:
     ),
 )
 def list_available_dates_tool(
-    model: Annotated[MODELS, Field(description="Model id — call list_available_models to discover valid values")] = None,
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
     offset: Annotated[
         int, Field(ge=0, description="Number of items to skip for pagination (default 0)")
     ] = 0,
@@ -145,7 +145,7 @@ def list_available_dates_tool(
     description="List available forecasts for a given model and date",
 )
 def list_available_forecasts_tool(
-    model: Annotated[MODELS, Field(description="Model id — call list_available_models to discover valid values")] = None,
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
     date: Annotated[
         Optional[str],
         Field(
@@ -175,7 +175,7 @@ def list_available_forecasts_tool(
     description="List available cycles for a given model, date, and forecast",
 )
 def list_available_cycles_tool(
-    model: Annotated[MODELS, Field(description="Model id — call list_available_models to discover valid values")] = None,
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
     date: Annotated[
         Optional[str],
         Field(
@@ -186,7 +186,7 @@ def list_available_cycles_tool(
     forecast: Annotated[
         FORECASTS,
         Field(
-            description="Forecast id — call list_available_forecasts to discover valid values",
+            description="Forecast id - call list_available_forecasts to discover valid values",
             pattern=r"^(short_range|medium_range|analysis_assim_extend)$",
         ),
     ] = None,
@@ -221,7 +221,7 @@ def list_available_cycles_tool(
     description="List available VPUs for a given model, date, forecast, and cycle",
 )
 def list_available_vpus_tool(
-    model: Annotated[MODELS, Field(description="Model id — call list_available_models to discover valid values")] = None,
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
     date: Annotated[
         Optional[str],
         Field(
@@ -232,7 +232,7 @@ def list_available_vpus_tool(
     forecast: Annotated[
         FORECASTS,
         Field(
-            description="Forecast id — call list_available_forecasts to discover valid values",
+            description="Forecast id - call list_available_forecasts to discover valid values",
             pattern=r"^(short_range|medium_range|analysis_assim_extend)$",
         ),
     ] = None,
@@ -281,7 +281,7 @@ def list_available_vpus_tool(
     description="List available output files for a given model, date, forecast, cycle, and VPU (accepts id or label, including subregion VPUs). Optional ensemble member for applicable forecast.",
 )
 def list_available_output_files_tool(
-    model: Annotated[MODELS, Field(description="Model id — call list_available_models to discover valid values")] = None,
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
     date: Annotated[
         Optional[str],
         Field(
@@ -292,7 +292,7 @@ def list_available_output_files_tool(
     forecast: Annotated[
         FORECASTS,
         Field(
-            description="Forecast id — call list_available_forecasts to discover valid values",
+            description="Forecast id - call list_available_forecasts to discover valid values",
             pattern=r"^(short_range|medium_range|analysis_assim_extend)$",
         ),
     ] = None,
@@ -308,7 +308,7 @@ def list_available_output_files_tool(
     vpu: Annotated[
         str,
         Field(
-            description="VPU identifier — call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
+            description="VPU identifier - call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
         ),
     ] = None,
     ensemble: Annotated[
@@ -357,17 +357,17 @@ def list_available_output_files_tool(
     description="Resolve a single output file path for model/date/forecast/cycle/vpu. Provide exactly one of file_name or index.",
 )
 def resolve_output_file_tool(
-    model: Annotated[MODELS, Field(description="Model id — call list_available_models to discover valid values")] = None,
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
     date: Annotated[
         Optional[str],
         Field(description="YYYY-MM-DD or YYYY/MM/DD", pattern=DATE_PATTERN),
     ] = None,
-    forecast: Annotated[FORECASTS, Field(description="Forecast id — call list_available_forecasts to discover valid values")] = None,
+    forecast: Annotated[FORECASTS, Field(description="Forecast id - call list_available_forecasts to discover valid values")] = None,
     cycle: Annotated[str, Field(description="Cycle", pattern=r"^(?:[01]\d|2[0-3])$")] = "00",
     vpu: Annotated[
         str,
         Field(
-            description="VPU identifier — call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
+            description="VPU identifier - call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
         ),
     ] = None,
     ensemble: Annotated[
@@ -454,12 +454,12 @@ def resolve_output_file_tool(
     ),
 )
 def query_output_file_from_output_selector_tool(
-    model: Annotated[MODELS, Field(description="Model id — call list_available_models to discover valid values")] = None,
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
     date: Annotated[
         Optional[str],
         Field(description="YYYY-MM-DD or YYYY/MM/DD", pattern=DATE_PATTERN),
     ] = None,
-    forecast: Annotated[FORECASTS, Field(description="Forecast id — call list_available_forecasts to discover valid values")] = None,
+    forecast: Annotated[FORECASTS, Field(description="Forecast id - call list_available_forecasts to discover valid values")] = None,
     cycle: Annotated[
         str,
         Field(
@@ -470,7 +470,7 @@ def query_output_file_from_output_selector_tool(
     vpu: Annotated[
         str,
         Field(
-            description="VPU identifier — call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
+            description="VPU identifier - call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
         ),
     ] = None,
     query: Annotated[

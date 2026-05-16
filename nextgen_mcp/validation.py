@@ -7,12 +7,12 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-# Shared type aliases — used in pydantic field annotations and tool signatures.
+# Shared type aliases - used in pydantic field annotations and tool signatures.
 FORECASTS = Literal["short_range", "medium_range", "analysis_assim_extend"]
 MODELS = Literal["cfe_nom", "lstm", "routing_only"]
 
 # LLM-facing hint strings for tool/prompt descriptions. Phrased to match
-# what the normalizers below actually accept — keep them in lockstep.
+# what the normalizers below actually accept - keep them in lockstep.
 MODEL_HINT = "cfe_nom / lstm / routing_only"
 FORECAST_HINT = "short_range / medium_range / analysis_assim_extend"
 DATE_HINT = "yyyy-mm-dd"
@@ -73,7 +73,7 @@ def normalize_cycle_hour(s: str) -> str:
         hh = int(raw)
         if 0 <= hh <= 23:
             return f"{hh:02d}"
-    raise ValueError("cycle must be an hour 00–23 (two digits preferred)")
+    raise ValueError("cycle must be an hour 00-23 (two digits preferred)")
 
 
 class OutputsFilesQuery(BaseModel):
@@ -82,7 +82,7 @@ class OutputsFilesQuery(BaseModel):
     model: str = Field(min_length=1, description="Model id (e.g., cfe_nom)")
     date: str = Field(description="Date in YYYY-MM-DD or YYYY/MM/DD")
     forecast: FORECASTS = Field(description="Forecast id")
-    cycle: str = Field(description="Cycle hour (00–23). Forecast-specific allowed values.")
+    cycle: str = Field(description="Cycle hour (00-23). Forecast-specific allowed values.")
     vpu: str = Field(
         description="VPU id or label (e.g., VPU_02, VPU 2, 2, VPU_03W, VPU 3W, 3W)."
     )

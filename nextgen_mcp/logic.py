@@ -424,7 +424,7 @@ def query_output_file(s3_url, query) -> Dict:
         # LLM-supplied SQL programmer error. Unlike the hardcoded-SQL
         # paths (which re-raise via _is_duckdb_programmer_error), these
         # errors are RECOVERABLE if the LLM gets a structured envelope
-        # with the available column list as fix_hint — same shape as the
+        # with the available column list as fix_hint - same shape as the
         # input-validation middleware's invalid_args response. Observed
         # 2026-05-10: qwen stalled on a BinderException when this re-raised
         # as a protocol error; with the structured envelope below the

@@ -5,7 +5,7 @@ server module ``nextgen_mcp.mcp_server`` exposes the FastMCP instance
 as ``mcp``; tests construct a Client against it without standing up a
 real HTTP transport.
 
-v1 ships a single prompt — ``plot_timeseries`` — driving the
+v1 ships a single prompt - ``plot_timeseries`` - driving the
 timeseries-chart workflow against
 ``query_output_file_from_output_selector``. These tests lock the prompt
 shape, the placeholder-default convention (K4), substitution semantics,
@@ -40,7 +40,7 @@ def _run(coro):
 def _concat_text(messages) -> str:
     """Concatenate ``.text`` from text-typed message contents.
 
-    Mirrors the chatbox-core insert handler's R7a behavior — only
+    Mirrors the chatbox-core insert handler's R7a behavior - only
     ``content.type == "text"`` participates; non-text content is
     silently dropped.
     """
@@ -66,7 +66,7 @@ PLOT_TIMESERIES_ARG_NAMES = (
 
 # Hint-bearing argument descriptions. Each description is the
 # user-facing format hint advertised via `Field(description=...)`
-# on the @mcp.prompt arg — derived from the NRDS validation types
+# on the @mcp.prompt arg - derived from the NRDS validation types
 # (`MODELS`, `FORECASTS`, `DATE_PATTERN` in `nextgen_mcp/validations.py`
 # / `nextgen_mcp/utils.py`) and the `query_output_file_from_output_selector`
 # field descriptions. When NRDS adds a new model/forecast/vpu, update
@@ -75,7 +75,7 @@ PLOT_TIMESERIES_ARG_NAMES = (
 #
 # Wire shape: every arg is `required: true` with no Python-level default.
 # Calling `prompts/get(name, {})` deliberately raises `-32602` (missing
-# required args) — chatbox-core synthesizes `[description]` brackets
+# required args) - chatbox-core synthesizes `[description]` brackets
 # client-side via the standard MCP arg.description metadata.
 PLOT_TIMESERIES_DESCRIPTIONS = {
     "variable": "flow / velocity / streamflow",
@@ -106,7 +106,7 @@ def _strip_fastmcp_schema_note(desc: str) -> str:
 # Args shared with query_output_file_from_output_selector (lock parity).
 OVERLAPPING_ARG_NAMES = ("model", "date", "forecast", "cycle", "vpu", "index")
 
-# Args intentionally narrative-only — must NOT appear in the selector
+# Args intentionally narrative-only - must NOT appear in the selector
 # tool's schema. Locks the partial-alignment design.
 NARRATIVE_ONLY_ARG_NAMES = ("variable", "feature_id")
 
@@ -136,7 +136,7 @@ def test_list_prompts_returns_plot_timeseries():
     prompt = by_name["plot_timeseries"]
     arg_names = {a.name for a in (prompt.arguments or [])}
     assert arg_names == set(PLOT_TIMESERIES_ARG_NAMES), (
-        f"plot_timeseries args mismatch — expected "
+        f"plot_timeseries args mismatch - expected "
         f"{set(PLOT_TIMESERIES_ARG_NAMES)}, got {arg_names}"
     )
 
@@ -167,7 +167,7 @@ def test_all_args_required_with_hint_descriptions():
         )
         cleaned = _strip_fastmcp_schema_note(arg.description or "")
         assert cleaned == expected_hint, (
-            f"arg {name!r} description mismatch — expected "
+            f"arg {name!r} description mismatch - expected "
             f"{expected_hint!r}, got {cleaned!r} (raw: {arg.description!r})"
         )
 
@@ -209,7 +209,7 @@ def _synth_bracket_args() -> dict:
 def test_get_prompt_with_synthesized_brackets_renders_all_hints():
     """Calling ``prompts/get`` with the chatbox-core-synthesized
     ``{name: "[<description>]"}`` args produces a rendered prompt
-    containing every hint inline — the wire-equivalent of the
+    containing every hint inline - the wire-equivalent of the
     previous server-side K4 placeholder-default convention.
     """
     async def go():
@@ -268,7 +268,7 @@ def test_get_prompt_substitutes_supplied_args_only():
 
 
 # ---------------------------------------------------------------------------
-# Small-model phrasing — plot_timeseries prose must give an unambiguous
+# Small-model phrasing - plot_timeseries prose must give an unambiguous
 # SQL hint so small Ollama models (qwen, gemma) don't hallucinate a
 # column named "variable" from the phrase "for variable {variable}".
 # Bug observed 2026-05-10 on qwen running the full template.
@@ -363,7 +363,7 @@ def _selector_tool_schema():
         None,
     )
     assert selector is not None, (
-        "query_output_file_from_output_selector missing from tools/list — "
+        "query_output_file_from_output_selector missing from tools/list - "
         "the parity contract cannot be evaluated"
     )
     schema = getattr(selector, "inputSchema", None) or {}
@@ -417,7 +417,7 @@ def test_narrative_only_args_present_on_prompt_absent_on_selector(arg_name):
     )
     assert arg_name not in selector_args, (
         f"{arg_name!r} unexpectedly present on "
-        f"query_output_file_from_output_selector — narrative-only args "
+        f"query_output_file_from_output_selector - narrative-only args "
         f"must not be promoted to selector tool args without review"
     )
 
@@ -428,7 +428,7 @@ def test_narrative_only_args_present_on_prompt_absent_on_selector(arg_name):
 
 
 # ---------------------------------------------------------------------------
-# Discovery prompts (Phase 2a) — list_models, list_dates, list_forecasts,
+# Discovery prompts (Phase 2a) - list_models, list_dates, list_forecasts,
 # list_cycles, list_vpus, list_output_files
 #
 # Each multi-arg discovery prompt carries the same five-test pattern as
@@ -461,7 +461,7 @@ DISCOVERY_PROMPTS = {
     "list_output_files": ("model", "date", "forecast", "cycle", "vpu"),
 }
 
-# Underlying tool name per prompt — used by the parity tests.
+# Underlying tool name per prompt - used by the parity tests.
 DISCOVERY_PROMPT_TO_TOOL = {
     "list_models": "list_available_models",
     "list_dates": "list_available_dates",
@@ -496,7 +496,7 @@ def _tool_schema_properties(tool_name):
     tools = _run(go())
     tool = next((t for t in tools if t.name == tool_name), None)
     assert tool is not None, (
-        f"{tool_name!r} missing from tools/list — parity contract cannot be evaluated"
+        f"{tool_name!r} missing from tools/list - parity contract cannot be evaluated"
     )
     schema = getattr(tool, "inputSchema", None) or {}
     return set((schema.get("properties") or {}).keys())
@@ -570,7 +570,7 @@ def test_discovery_prompt_listed_with_expected_args(prompt_name):
     arg_names = {a.name for a in (by_name[prompt_name].arguments or [])}
     expected = set(DISCOVERY_PROMPTS[prompt_name])
     assert arg_names == expected, (
-        f"{prompt_name!r} args mismatch — expected {expected}, got {arg_names}"
+        f"{prompt_name!r} args mismatch - expected {expected}, got {arg_names}"
     )
 
 
@@ -591,7 +591,7 @@ def test_discovery_prompt_all_args_required_with_hint_descriptions(prompt_name):
         )
         cleaned = _strip_fastmcp_schema_note(arg.description or "")
         assert cleaned == DISCOVERY_HINTS[name], (
-            f"{prompt_name}.{name!r} description mismatch — expected "
+            f"{prompt_name}.{name!r} description mismatch - expected "
             f"{DISCOVERY_HINTS[name]!r}, got {cleaned!r}"
         )
 
@@ -671,7 +671,7 @@ def test_discovery_prompt_substitutes_supplied_args_only(prompt_name):
 
 def _parametrize_per_prompt_arg_pairs():
     """Yield (prompt_name, arg_name) tuples for the parametrize decorator
-    so each (prompt, arg) pair gets its own test case — failures point at
+    so each (prompt, arg) pair gets its own test case - failures point at
     a precise drift, not a bulk mismatch.
     """
     for prompt_name, arg_names in DISCOVERY_PROMPTS.items():
@@ -686,7 +686,7 @@ def test_discovery_prompt_arg_name_parity_with_underlying_tool(
     prompt_name, arg_name
 ):
     """Each prompt argument name exists on the underlying list_available_*
-    tool's input schema. Catches arg-name drift between prompt and tool —
+    tool's input schema. Catches arg-name drift between prompt and tool -
     the #1 risk in this plan (per feedback_input_output_name_alignment.md).
     """
     tool_name = DISCOVERY_PROMPT_TO_TOOL[prompt_name]
@@ -698,7 +698,7 @@ def test_discovery_prompt_arg_name_parity_with_underlying_tool(
 
 
 # ---------------------------------------------------------------------------
-# Query/lookup prompts (Phase 2b) — lookup_feature, query_by_url,
+# Query/lookup prompts (Phase 2b) - lookup_feature, query_by_url,
 # resolve_file_by_index, resolve_file_by_name
 #
 # These are query/lookup-archetype prompts (one per query/lookup tool plus
@@ -746,7 +746,7 @@ QUERY_LOOKUP_PROMPTS = {
     ),
 }
 
-# Both resolve_file_* variants target the same underlying tool —
+# Both resolve_file_* variants target the same underlying tool -
 # resolve_output_file's input schema contains both file_name and index,
 # so the parity test passes for either variant.
 QUERY_LOOKUP_PROMPT_TO_TOOL = {
@@ -768,7 +768,7 @@ def test_query_lookup_prompt_listed_with_expected_args(prompt_name):
     arg_names = {a.name for a in (by_name[prompt_name].arguments or [])}
     expected = set(QUERY_LOOKUP_PROMPTS[prompt_name])
     assert arg_names == expected, (
-        f"{prompt_name!r} args mismatch — expected {expected}, got {arg_names}"
+        f"{prompt_name!r} args mismatch - expected {expected}, got {arg_names}"
     )
 
 
@@ -792,7 +792,7 @@ def test_query_lookup_prompt_all_args_required_with_hint_descriptions(
         )
         cleaned = _strip_fastmcp_schema_note(arg.description or "")
         assert cleaned == QUERY_LOOKUP_HINTS[name], (
-            f"{prompt_name}.{name!r} description mismatch — expected "
+            f"{prompt_name}.{name!r} description mismatch - expected "
             f"{QUERY_LOOKUP_HINTS[name]!r}, got {cleaned!r}"
         )
 
@@ -869,7 +869,7 @@ def _parametrize_per_prompt_arg_pairs_ql():
 
     Mirrors the Phase 2a discovery helper but reads from QUERY_LOOKUP_*
     constants. Kept separate so the two batches' parity tests fail with
-    distinct names — clearer signal when a specific prompt drifts.
+    distinct names - clearer signal when a specific prompt drifts.
     """
     for prompt_name, arg_names in QUERY_LOOKUP_PROMPTS.items():
         for arg_name in arg_names:
@@ -883,7 +883,7 @@ def test_query_lookup_prompt_arg_name_parity_with_underlying_tool(
     prompt_name, arg_name
 ):
     """Each prompt argument name exists on the underlying query/lookup
-    tool's input schema. Catches arg-name drift between prompt and tool —
+    tool's input schema. Catches arg-name drift between prompt and tool -
     the #1 risk in this plan (per feedback_input_output_name_alignment.md).
 
     Both resolve_file_by_index and resolve_file_by_name target

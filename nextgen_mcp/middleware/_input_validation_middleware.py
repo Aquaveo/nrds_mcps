@@ -94,7 +94,7 @@ class InputValidationEnvelopeMiddleware(Middleware):
     fix all hallucinated kwargs, missing required args, and value-shape
     issues on a single retry instead of one-class-at-a-time.
 
-    The LLM-facing payload omits the tool name — the MCP protocol already
+    The LLM-facing payload omits the tool name - the MCP protocol already
     associates a tool result with the call that produced it. The server-side
     log line is the only place the tool name appears.
     """

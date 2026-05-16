@@ -10,7 +10,7 @@ import xarray as xr
 from ._io_config import HYDROFABRIC_INDEX_URL, duckdb_connect_with_httpfs, open_fsspec_file
 
 
-# Per-code sanitized message + fix_hint. NEVER use str(exc) directly — 
+# Per-code sanitized message + fix_hint. NEVER use str(exc) directly - 
 # The LLM-facing envelope sees the sanitized
 # message only; the full str(exc) is logged at WARNING+ for operators.
 _IO_ERROR_CATALOG = {
@@ -22,26 +22,26 @@ _IO_ERROR_CATALOG = {
     ),
     "permission_denied": (
         "Access denied to the upstream data store.",
-        "Access denied to the upstream data store. Do NOT retry — this is "
+        "Access denied to the upstream data store. Do NOT retry - this is "
         "a deployment configuration issue. Surface to the user as a "
         "server-side problem.",
     ),
     "upstream_error": (
         "Upstream data store error.",
-        "Upstream data store error. Do NOT retry the same call — try a "
+        "Upstream data store error. Do NOT retry the same call - try a "
         "different selector combination (model/date/forecast/vpu) before "
         "reporting failure to the user.",
     ),
     "not_found": (
         "Requested resource was not found.",
-        "Requested resource was not found. Do NOT retry the same call — "
+        "Requested resource was not found. Do NOT retry the same call - "
         "the selector combination does not match any available data. Try "
         "a different selector or check what's available via the "
         "corresponding list_* tool.",
     ),
     "execution_error": (
         "Internal execution error.",
-        "Internal execution error. Do NOT retry — surface to the user. If "
+        "Internal execution error. Do NOT retry - surface to the user. If "
         "reproducible, this is a server-side bug.",
     ),
 }
@@ -90,10 +90,10 @@ def _classify_io_error(exc: BaseException) -> tuple[str, str, str]:
 
     Maps the raised exception class to a stable error code and per-code
     sanitized text. The raw ``str(exc)`` is intentionally NOT propagated
-    into the LLM-facing envelope — see _IO_ERROR_CATALOG for the rationale.
+    into the LLM-facing envelope - see _IO_ERROR_CATALOG for the rationale.
 
     Programmer-error DuckDB classes (BinderException, ParserException,
-    CatalogException) MUST be re-raised before reaching this helper —
+    CatalogException) MUST be re-raised before reaching this helper -
     classifying them as execution_error would mask wrong-column / malformed
     -SQL / missing-table bugs and let an LLM retry forever. Callers should
     check ``isinstance(exc, (duckdb.BinderException, duckdb.ParserException,
@@ -142,7 +142,7 @@ def _is_duckdb_programmer_error(exc: BaseException) -> bool:
     to hardcoded-SQL call sites (e.g. _duckdb_lookup_hydrofabric_feature).
 
     For LLM-supplied-SQL call sites (query_output_file's `query` arg), use
-    ``_classify_llm_sql_error`` instead — the LLM CAN recover from these
+    ``_classify_llm_sql_error`` instead - the LLM CAN recover from these
     if given a structured envelope with the column list as fix_hint, the
     same pattern InputValidationEnvelopeMiddleware uses for kwarg errors.
     """
@@ -429,7 +429,7 @@ def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
 
     Uses ``open_fsspec_file`` so the timeout-configured fsspec client
     reaches the underlying h5netcdf transport. ``xarray.open_dataset``
-    cannot be called directly on a URL with a custom fsspec config — the
+    cannot be called directly on a URL with a custom fsspec config - the
     OpenFile context manager handles that.
     """
 
