@@ -16,11 +16,6 @@ LLM has enough information to retry the call correctly in one turn.
 
 # FastMCP 3.2.x-specific. Re-validate on FastMCP upgrade.
 
-# Initial port from tethysapp/tethysdash/mcp/_input_validation_middleware.py
-# at 2026-05-10. nrds_mcps owns this copy; evolution is independent of
-# tethysdash. The two MCP servers are separate products with different
-# audiences and release cadences; there is no lockstep contract.
-
 Envelope quality:
 
   - All applicable error classes are reported in ONE envelope (no
@@ -356,16 +351,10 @@ def _describe_other_errors(others: list[dict[str, Any]]) -> str:
 
 def _summarize_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Strip pydantic error dicts to a stable, value-free summary.
-
     Names + types + actionable context (regex pattern, numeric bounds);
     no user-supplied values. Carries forward the parts of pydantic's
     ``ctx`` that tell the LLM what to satisfy (e.g. the actual regex
     pattern on string_pattern_mismatch) without leaking the bad input.
-
-    Observed 2026-05-10: dropping ``ctx`` entirely on string_pattern_mismatch
-    left the LLM with only `{field, type}` and no clue what pattern to
-    match. The middleware DID emit an envelope, but its `fix_hint` was
-    too generic to drive recovery.
     """
     summary: list[dict[str, Any]] = []
     for err in errors:
