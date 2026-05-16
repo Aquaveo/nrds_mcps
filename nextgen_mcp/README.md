@@ -92,11 +92,11 @@ nextgen_mcp/
   mcp_server.py       # Server entry point
   _mcp.py             # FastMCP instance, middleware registration, /health route
   _io_config.py       # S3 filesystem + URL constants
-  _helpers.py         # Tool-body helpers (date parsing, validation guards)
   tools.py            # @mcp.tool definitions
   prompts.py          # @mcp.prompt slash-command templates
   logic.py            # Core data logic (S3 listing, DuckDB queries)
-  utils.py            # Endpoint-dispatch bridge, label/id helpers
+  utils.py            # Tool-body helpers — date parsing, validation guards,
+                      # id/label normalization, payload reshaping
   utils_rest.py       # DuckDB / parquet / netCDF helpers, error classifiers
   validation.py       # Pydantic models, Literal types, normalize_* helpers
   middleware/

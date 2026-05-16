@@ -29,6 +29,15 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- **`_helpers.py` merged into `utils.py`.** Both files held tool-body
+  helpers and the split was arbitrary — `_helpers` already imported
+  date constants and `_parse_iso_date` from `utils`. Consolidating
+  removes the cross-module dependency between two files with the
+  same conceptual role. `_preview_text`, `_validate_date_bounds`,
+  `_parse_date_or_today`, `_require`, and the `_MIN_ALLOWED_DATE`
+  constant now live in `utils.py`. Callers update their import path
+  from `._helpers` to `.utils`.
+
 - **`utils._get_json_raw` and its endpoint dispatch table are removed.**
   The function was a vestigial REST-shim from an earlier era when these
   MCP tools wrapped an HTTP API; every `_get_json_raw("foo", params=p)`
