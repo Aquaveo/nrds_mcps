@@ -27,6 +27,16 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (it drove the removed tool); use `lookup_feature` instead.
 - `EXPECTED_MIN_TOOLS` in `release.yml` bumped 11 → 10.
 
+### Changed
+
+- **Date regex deduplicated.** `utils.DATE_PATTERN` and
+  `validation.DATE_RE` both defined the same regex (`^(?:\d{4}-\d{2}-
+  \d{2}|\d{4}/\d{2}/\d{2})$`). The pattern string now lives in
+  `validation.py` only; `DATE_RE` is `re.compile(DATE_PATTERN)`, so
+  the compiled object and the string-for-pydantic-Field are
+  guaranteed to stay in lockstep. `tools.py` imports `DATE_PATTERN`
+  from `.validation` instead of `.utils`.
+
 ### Removed
 
 - **`_helpers.py` merged into `utils.py`.** Both files held tool-body

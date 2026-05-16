@@ -19,7 +19,8 @@ DATE_HINT = "yyyy-mm-dd"
 CYCLE_HINT = "00-23, e.g., 00"
 VPU_HINT = "06, VPU_06, or 3W"
 
-DATE_RE = re.compile(r"^(?:\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2})$")
+DATE_PATTERN = r"^(?:\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2})$"
+DATE_RE = re.compile(DATE_PATTERN)
 VPU_PREFIX_RE = re.compile(r"^VPU[_\s-]*(\d{1,2})([A-Za-z]?)$", re.IGNORECASE)
 VPU_NUM_RE = re.compile(r"^(\d{1,2})([A-Za-z]?)$", re.IGNORECASE)
 VPU_ALLOWED_SUFFIXES = {"U", "L", "W", "S", "N"}

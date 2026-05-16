@@ -9,7 +9,6 @@ from .utils import (
     _as_id,
     _parse_iso_date,
     DEFAULT_START,
-    DATE_PATTERN,
     _date_from_item,
     _require,
     _parse_date_or_today,
@@ -17,6 +16,7 @@ from .utils import (
     _preview_text,
 )
 from .validation import (
+    DATE_PATTERN,
     FORECASTS,
     MODELS,
 )

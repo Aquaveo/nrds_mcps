@@ -7,7 +7,6 @@ from ._mcp import LOGGER
 from .validation import normalize_vpu
 from .middleware._input_validation_middleware import InvalidLLMInputError
 
-DATE_PATTERN = r"^(?:\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2})$"
 DEFAULT_START = "2025-08-01"
 DEFAULT_TZ = ZoneInfo("America/Denver")
 
