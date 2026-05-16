@@ -7,7 +7,7 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Removed (BREAKING — tool surface)
+### Removed (BREAKING - tool surface)
 
 - **`query_hydrofabric_parquet_file` is removed.** Its hydrofabric-id
   search overlapped almost entirely with `lookup_hydrofabric_feature`
@@ -40,7 +40,7 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed
 
 - **`_helpers.py` merged into `utils.py`.** Both files held tool-body
-  helpers and the split was arbitrary — `_helpers` already imported
+  helpers and the split was arbitrary - `_helpers` already imported
   date constants and `_parse_iso_date` from `utils`. Consolidating
   removes the cross-module dependency between two files with the
   same conceptual role. `_preview_text`, `_validate_date_bounds`,
@@ -63,7 +63,7 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server has no search-facade surface to load-test.
 - BM25-related comment in
   `nextgen_mcp/middleware/_input_validation_middleware.py` simplified
-  — the underlying rationale (MCP protocol already associates tool
+  - the underlying rationale (MCP protocol already associates tool
   result with call) stands; the search-facade leak motivation no
   longer applies.
 
@@ -82,14 +82,14 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pre-existing relative-import typo (`..middleware`) in `_mcp.py`,
   `_helpers.py`, and `tools.py` corrected to `.middleware`. The
   middleware package is a subpackage of `nextgen_mcp/`, not a sibling.
-- Stale `from middleware._input_validation_middleware import …` paths
+- Stale `from middleware._input_validation_middleware import ...` paths
   in `test_mcp/test_middleware.py` updated to
-  `from nextgen_mcp.middleware._input_validation_middleware import …`.
+  `from nextgen_mcp.middleware._input_validation_middleware import ...`.
 - README dead references cleaned up: top-level README had a stray
   `=`, an unclosed parenthesis, and a "13 tools" smoke-gate count
   that drifted from `release.yml`. `nextgen_mcp/README.md` was
   rewritten as a short dev-loop pointer to the canonical top-level
-  README — old content referenced the pre-2026-05-02 `nextgen_plugins/`
+  README - old content referenced the pre-2026-05-02 `nextgen_plugins/`
   layout, a `/sse` default, dead `NRDS_API_HOST`/`OLLAMA_HOST` env
   vars, removed `create_plotly_chart_*` tools, and a `.devcontainer/`
   directory that no longer exists in this repo.
@@ -97,9 +97,9 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `validation.py`. The duplicate `Forecasts` / `FORECASTS` `Literal`
   collapsed to one canonical `FORECASTS`.
 
-## [0.2.0] — 2026-05-04
+## [0.2.0] - 2026-05-04
 
-### Removed (BREAKING — tool surface)
+### Removed (BREAKING - tool surface)
 
 - **`create_plotly_chart_from_output_selector` is removed.** Use
   `query_output_file_from_output_selector` to fetch rows, then call
@@ -145,25 +145,25 @@ The remaining 11 tools (lists, resolvers, queries) are unchanged.
 
 ### Internal cleanup
 
-- `nextgen_mcp/rest.py` — chart helpers
+- `nextgen_mcp/rest.py` - chart helpers
   (`create_plotly_chart_from_output_file`,
   `create_plotly_chart_from_parquet_output_file`) deleted.
   `build_hydrofabric_feature_map_config` replaced with the data-only
   `lookup_hydrofabric_feature` (uses new `_bbox_from_row` helper plus
   the existing `_duckdb_lookup_hydrofabric_feature`,
   `_normalize_record`, `_get_feature_center` from `utils_rest.py`).
-- `nextgen_mcp/utils.py` — corresponding imports + dispatch entries
+- `nextgen_mcp/utils.py` - corresponding imports + dispatch entries
   removed; new dispatch entry for `lookup_hydrofabric_feature` added.
 
-### Changed (BREAKING — URL path, carried over from prior unreleased)
+### Changed (BREAKING - URL path, carried over from prior unreleased)
 
 - **Default transport switched from SSE to Streamable HTTP.** The MCP
   endpoint moves from `/sse` to `/mcp` (FastMCP default for streamable-http).
   The legacy `/sse` URL returns 404 in default config.
-- **Migration:** clients with hardcoded `…/sse` URLs (e.g., tethysdash's
-  saved MCP server config) must update to `…/mcp`. chatbox-core's
+- **Migration:** clients with hardcoded `.../sse` URLs (e.g., tethysdash's
+  saved MCP server config) must update to `.../mcp`. chatbox-core's
   `pickTransport()` auto-detects from the URL suffix, so only the URL
-  string changes — no code change in consumers.
+  string changes - no code change in consumers.
 
 ### Fixed
 
@@ -213,11 +213,11 @@ The remaining 11 tools (lists, resolvers, queries) are unchanged.
 
 ### Changed
 
-- Redeploy workflow simplified to a single `gcloud run deploy` command —
+- Redeploy workflow simplified to a single `gcloud run deploy` command -
   no more manual `docker pull` / `tag` / `push` mirror step. AR remote
   repo handles ghcr.io→AR proxying transparently.
 
-## [0.1.0] — 2026-05-02
+## [0.1.0] - 2026-05-02
 
 First deployable container image.
 
@@ -226,7 +226,7 @@ First deployable container image.
 - Multi-stage `Dockerfile` (Python 3.11-slim builder + slim runtime) producing
   a non-root image with `HEALTHCHECK` polling `GET /health` every 30 s.
 - `/health` route returning `{"status":"ok"}` for liveness probes.
-- `nextgen_mcp/requirements.lock` — full transitive closure (99 pinned
+- `nextgen_mcp/requirements.lock` - full transitive closure (99 pinned
   packages) for reproducible builds.
 - GitHub Actions CI: Python smoke import + Docker build + container smoke
   (start image, poll `/health`, stop) on every push and PR.
@@ -239,7 +239,7 @@ First deployable container image.
 ### Notes
 
 - Image size: ~750 MB (numpy/pandas/pyarrow account for most). Slim base
-  used; further reduction (distroless, alpine) deferred — alpine risks
+  used; further reduction (distroless, alpine) deferred - alpine risks
   musl/glibc compatibility for prebuilt scientific Python wheels.
 - The `scripts/setup-mcp.sh` developer workflow is unchanged; container
   is the deploy path.
