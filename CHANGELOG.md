@@ -29,6 +29,14 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- **`utils._get_json_raw` and its endpoint dispatch table are removed.**
+  The function was a vestigial REST-shim from an earlier era when these
+  MCP tools wrapped an HTTP API; every `_get_json_raw("foo", params=p)`
+  call has been rewritten to call `logic.foo(**p)` directly. Tools in
+  `tools.py` now import from `logic` directly. Net effect: ~50 lines
+  removed from `utils.py`, one less indirection layer, and tool call
+  graphs are now visible to grep without chasing a string-keyed dispatch.
+
 - **`test_mcp/test_large_catalog_server.py` is removed.** The fixture
   was a standalone runnable for exercising FastMCP's
   `BM25SearchTransform` search-facade against a synthetic large tool
@@ -42,6 +50,16 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Latent `NameError` in `tools.py`: `_preview_text` was used in
+  `query_output_file_from_output_selector` and `query_output_file` tool
+  bodies but never imported. Tests passed only because the line was
+  unreachable during collection. Added to the `_helpers` import.
+- Python-level name collision between the `lookup_hydrofabric_feature`
+  MCP tool function and the `logic.lookup_hydrofabric_feature`
+  function. The tool's Python def is renamed to
+  `lookup_hydrofabric_feature_tool` (the MCP-facing name stays
+  `lookup_hydrofabric_feature` via the decorator's `name=` arg),
+  consistent with every other tool in the file.
 - Pre-existing relative-import typo (`..middleware`) in `_mcp.py`,
   `_helpers.py`, and `tools.py` corrected to `.middleware`. The
   middleware package is a subpackage of `nextgen_mcp/`, not a sibling.

@@ -445,7 +445,6 @@ def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
 
     return nc_df
 
-
 def _duckdb_query_parquet(file_url: str, query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query against a parquet file exposed as temp view `output`."""
     safe_file_url = file_url.replace("'", "''")

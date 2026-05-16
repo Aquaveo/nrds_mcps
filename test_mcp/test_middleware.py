@@ -275,7 +275,7 @@ def test_incidental_value_error_is_not_enveloped(monkeypatch):
     def boom(*_a, **_kw):
         raise ValueError("simulated upstream parse failure")
 
-    monkeypatch.setattr(mcp_server.tools, "_get_json_raw", boom)
+    monkeypatch.setattr(mcp_server.tools, "list_available_models", boom)
 
     async def go():
         async with Client(mcp) as c:

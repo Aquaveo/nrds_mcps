@@ -5,7 +5,6 @@ from typing import Optional, Dict, Any
 from typing_extensions import Annotated
 from pydantic import Field
 from .utils import (
-    _get_json_raw,
     _prefer_id_objects,
     _as_id,
     _parse_iso_date,
@@ -17,10 +16,23 @@ from .validation import (
     FORECASTS,
     MODELS,
 )
-from ._helpers import ( 
-    _require, 
-    _parse_date_or_today, 
-    _validate_date_bounds
+from ._helpers import (
+    _require,
+    _parse_date_or_today,
+    _validate_date_bounds,
+    _preview_text,
+)
+from .logic import (
+    list_available_models,
+    list_available_dates,
+    list_available_forecasts,
+    list_available_cycles,
+    list_available_vpus,
+    list_available_output_files,
+    get_output_file,
+    query_output_file,
+    query_output_file_from_output_selector,
+    lookup_hydrofabric_feature as _lookup_hydrofabric_feature,
 )
 
 from .middleware._input_validation_middleware import InvalidLLMInputError
@@ -28,7 +40,7 @@ from .middleware._input_validation_middleware import InvalidLLMInputError
 @mcp.tool(name="list_available_models", description="List available NRDS models. It should not have any arguments when called.")
 def list_available_models_tool() -> Dict[str, Any]:
     LOGGER.info("Tool list_available_models called")
-    raw = _get_json_raw("list_available_models")
+    raw = list_available_models()
     result = _prefer_id_objects(raw, "models")
     LOGGER.info(
         "Tool list_available_models completed count=%s",
@@ -97,7 +109,7 @@ def list_available_dates_tool(
             f"'start' must be <= 'end' (got start={start_date}, end={end_date})"
         )
 
-    raw = _get_json_raw("list_available_dates", params={"model": model})
+    raw = list_available_dates(model=model)
     raw = _prefer_id_objects(raw, "dates")
 
     dates = raw.get("dates") or []
@@ -148,9 +160,7 @@ def list_available_forecasts_tool(
         return err
     LOGGER.info("Tool list_available_forecasts called model=%s date=%s", model, date)
     end_date = _parse_date_or_today(date, "date")
-    raw = _get_json_raw(
-        "list_available_forecasts", params={"model": model, "date": end_date.isoformat()}
-    )
+    raw = list_available_forecasts(model=model, date=end_date.isoformat())
     result = _prefer_id_objects(raw, "forecasts")
     LOGGER.info(
         "Tool list_available_forecasts completed model=%s date=%s count=%s",
@@ -193,9 +203,8 @@ def list_available_cycles_tool(
         forecast_id,
     )
     end_date = _parse_date_or_today(date, "date")
-    raw = _get_json_raw(
-        "list_available_cycles",
-        params={"model": model, "date": end_date.isoformat(), "forecast": forecast_id},
+    raw = list_available_cycles(
+        model=model, date=end_date.isoformat(), forecast=forecast_id
     )
     result = _prefer_id_objects(raw, "cycles")
     LOGGER.info(
@@ -250,9 +259,11 @@ def list_available_vpus_tool(
         cycle,
     )
     end_date = _parse_date_or_today(date, "date")
-    raw = _get_json_raw(
-        "list_available_vpus",
-        params={"model": model, "date": end_date.isoformat(), "forecast": forecast_id, "cycle": cycle},
+    raw = list_available_vpus(
+        model=model,
+        date=end_date.isoformat(),
+        forecast=forecast_id,
+        cycle=cycle,
     )
     result = _prefer_id_objects(raw, "vpus")
     LOGGER.info(
@@ -328,7 +339,7 @@ def list_available_output_files_tool(
     if ensemble is not None:
         params["ensemble"] = int(ensemble)
 
-    raw = _get_json_raw("list_available_output_files", params=params)
+    raw = list_available_output_files(data=params)
     result = _prefer_id_objects(raw, "files")
     LOGGER.info(
         "Tool list_available_output_files completed model=%s date=%s forecast=%s cycle=%s vpu=%s count=%s",
@@ -410,7 +421,16 @@ def resolve_output_file_tool(
     if index is not None:
         params["index"] = index
 
-    result = _get_json_raw("get_output_file", params=params)
+    result = get_output_file(
+        model=params["model"],
+        date=params["date"],
+        forecast=params["forecast"],
+        cycle=params["cycle"],
+        vpu=params["vpu"],
+        file_name=params.get("file_name"),
+        index=params.get("index"),
+        ensemble=params.get("ensemble"),
+    )
     LOGGER.info(
         "Tool resolve_output_file completed model=%s date=%s forecast=%s cycle=%s vpu=%s",
         model,
@@ -522,7 +542,17 @@ def query_output_file_from_output_selector_tool(
     else:
         params["index"] = 0 if index is None else index
 
-    result = _get_json_raw("query_output_file_from_output_selector", params=params)
+    result = query_output_file_from_output_selector(
+        model=params["model"],
+        date=params["date"],
+        forecast=params["forecast"],
+        cycle=params["cycle"],
+        vpu=params["vpu"],
+        query=params["query"],
+        ensemble=params.get("ensemble"),
+        file_name=params.get("file_name"),
+        index=params.get("index"),
+    )
 
     LOGGER.info(
         "Tool query_output_file_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s",
@@ -568,7 +598,7 @@ def query_output_file_tool(
         s3_url,
         _preview_text(query),
     )
-    result =  _get_json_raw("query_output_file", params={"s3_url": s3_url, "query": query})
+    result = query_output_file(s3_url=s3_url, query=query)
     LOGGER.info("Tool query_output_file completed s3_url=%s", s3_url)
     return result
 
@@ -585,7 +615,7 @@ def query_output_file_tool(
         "built from this data."
     ),
 )
-def lookup_hydrofabric_feature(
+def lookup_hydrofabric_feature_tool(
     hydrofabric_id: Annotated[
         str,
         Field(description="Hydrofabric identifier to search in columns id and divide_id.")
@@ -604,10 +634,7 @@ def lookup_hydrofabric_feature(
         hydrofabric_id,
         limit,
     )
-    result = _get_json_raw(
-        "lookup_hydrofabric_feature",
-        params={"hydrofabric_id": hydrofabric_id, "limit": limit},
-    )
+    result = _lookup_hydrofabric_feature(hydrofabric_id=hydrofabric_id, limit=limit)
     LOGGER.info(
         "Tool lookup_hydrofabric_feature completed hydrofabric_id=%s limit=%s",
         hydrofabric_id,

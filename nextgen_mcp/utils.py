@@ -1,77 +1,12 @@
-# utils.py
-import os
 import re
 from typing import Dict, Any, Optional
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from .validation import normalize_vpu
-from .logic import (
-    list_available_models,
-    list_available_dates,
-    list_available_forecasts,
-    list_available_cycles,
-    list_available_vpus,
-    list_available_output_files,
-    get_output_file,
-    query_output_file,
-    query_output_file_from_output_selector,
-    lookup_hydrofabric_feature,
-)
 
 DATE_PATTERN = r"^(?:\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2})$"
 DEFAULT_START = "2025-08-01"
 DEFAULT_TZ = ZoneInfo("America/Denver")
-
-def _get_json_raw(endpoint_key: str, params: Optional[Dict[str, Any]] = None, **_) -> Dict[str, Any]:
-    p = params or {}
-
-    if endpoint_key == "list_available_models":
-        return list_available_models()
-
-    if endpoint_key == "list_available_dates":
-        return list_available_dates(model=p["model"])
-
-    if endpoint_key == "list_available_forecasts":
-        return list_available_forecasts(model=p["model"], date=p["date"])
-
-    if endpoint_key == "list_available_cycles":
-        return list_available_cycles(model=p["model"], date=p["date"], forecast=p["forecast"])
-
-    if endpoint_key == "list_available_vpus":
-        return list_available_vpus(model=p["model"], date=p["date"], forecast=p["forecast"], cycle=p["cycle"])
-
-    if endpoint_key == "list_available_output_files":
-        return list_available_output_files(data=p)
-
-    if endpoint_key == "get_output_file":
-        return get_output_file(
-            model=p["model"], date=p["date"], forecast=p["forecast"], cycle=p["cycle"], vpu=p["vpu"],
-            file_name=p.get("file_name"), index=p.get("index"), ensemble=p.get("ensemble")
-        )
-    
-    if endpoint_key == "query_output_file":
-        return query_output_file(s3_url=p["s3_url"], query=p["query"])
-    
-    if endpoint_key == "query_output_file_from_output_selector":
-        return query_output_file_from_output_selector(
-            model=p["model"],
-            date=p["date"],
-            forecast=p["forecast"],
-            cycle=p["cycle"],
-            vpu=p["vpu"],
-            query=p["query"],
-            ensemble=p.get("ensemble"),
-            file_name=p.get("file_name"),
-            index=p.get("index"),
-        )
-
-    if endpoint_key == "lookup_hydrofabric_feature":
-        return lookup_hydrofabric_feature(
-            hydrofabric_id=p["hydrofabric_id"],
-            limit=p.get("limit", 1),
-        )
-
-    raise KeyError(f"Unknown endpoint_key: {endpoint_key}")
 
 
 def _as_id(value: str) -> str:
