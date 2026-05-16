@@ -14,10 +14,6 @@ the tool. Diagnosing a slow turn requires cross-referencing multiple
 logs and reading verbose Pydantic tracebacks. This middleware adds
 the missing summary signal.
 
-# Initial port from tethysapp/tethysdash/mcp/_observability_middleware.py
-# at 2026-05-10. nrds_mcps owns this copy; evolution is independent of
-# tethysdash.
-
 Format:
 
     tool-call session=<short_session_id> tool=<name> arg_keys=[<keys>]
