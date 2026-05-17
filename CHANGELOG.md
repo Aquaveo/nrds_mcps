@@ -7,6 +7,8 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-16
+
 ### Removed (BREAKING - tool surface)
 
 - **`query_hydrofabric_parquet_file` is removed.** Its hydrofabric-id
@@ -246,5 +248,6 @@ First deployable container image.
 - `test_mcp/test_large_catalog_server.py` is a runnable load-test fixture,
   not pytest tests; not run in CI.
 
-[Unreleased]: https://github.com/Aquaveo/nrds_mcps/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Aquaveo/nrds_mcps/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Aquaveo/nrds_mcps/compare/v0.3.0...v0.4.0
 [0.1.0]: https://github.com/Aquaveo/nrds_mcps/releases/tag/v0.1.0
