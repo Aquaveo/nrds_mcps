@@ -5,12 +5,6 @@ from .middleware._input_validation_middleware import InputValidationEnvelopeMidd
 from .middleware._observability_middleware import ToolCallObservabilityMiddleware
 import logging
 
-# Middleware order:
-#   - ToolCallObservabilityMiddleware OUTERMOST so it observes the final
-#     envelope after validation middleware has converted ValidationError
-#     to a structured tool result.
-#   - InputValidationEnvelopeMiddleware INNER so it catches pydantic
-#     ValidationError before it bubbles out.
 mcp = FastMCP(
     "NRDS MCP Server",
     middleware=[
