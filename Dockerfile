@@ -1,6 +1,4 @@
-# syntax=docker/dockerfile:1.7
 
-# ---- Stage 1: builder -------------------------------------------------------
 # Installs pinned Python dependencies into a venv. Build tooling stays here.
 FROM python:3.11-slim AS builder
 
@@ -23,7 +21,6 @@ RUN python -m venv /venv \
     && /venv/bin/pip install -r requirements.lock
 
 
-# ---- Stage 2: runtime -------------------------------------------------------
 # Copies the venv from the builder. No build tooling. Non-root user.
 FROM python:3.11-slim AS runtime
 
@@ -50,7 +47,7 @@ USER mcp
 
 # Cloud Run's container filesystem is read-only except /tmp. DuckDB writes
 # its extension cache to ~/.duckdb/extensions/ on first use of httpfs (or
-# any extension), so the user's HOME must be writable. /app — the WORKDIR —
+# any extension), so the user's HOME must be writable. /app - the WORKDIR -
 # is owned by root and not writable by the mcp user; pointing HOME at /tmp
 # (Cloud Run's tmpfs) lets DuckDB create /tmp/.duckdb/extensions/ on demand.
 # Extensions get re-downloaded on cold start, which is bounded (~5 MB for

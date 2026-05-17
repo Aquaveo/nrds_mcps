@@ -1,8 +1,8 @@
 # NRDS MCP Server
 
-[Model Context Protocol](https://modelcontextprotocol.io) server exposing **data-only** NRDS tools — query S3-backed output files, list available models / dates / forecasts, look up hydrofabric features. Pair with a host that owns rendering (charts, maps, tables); this server returns rows and metadata only and does not produce host-renderable payloads.
+[Model Context Protocol](https://modelcontextprotocol.io) server exposing **data-only** NRDS tools - query S3-backed output files, list available models / dates / forecasts, look up hydrofabric features. Pair with a host that owns rendering (charts, maps, tables); this server returns rows and metadata only and does not produce host-renderable payloads.
 
-Built on [FastMCP](https://github.com/jlowin/fastmcp) with SSE transport.
+Built on [FastMCP](https://github.com/jlowin/fastmcp) with Streamable HTTP transport (default since v0.1.1; legacy SSE supported via `MCP_TRANSPORT=sse`).
 
 ## Quick Start (Docker)
 
@@ -25,7 +25,7 @@ curl -fsS http://localhost:9000/health
 # {"status":"ok"}
 ```
 
-Connect an MCP client to `http://<host>:9000/mcp` (Streamable HTTP transport, default since v0.1.1; legacy SSE clients should use `MCP_TRANSPORT=sse` and connect to `/sse` instead).
+Connect an MCP client to `http://<host>:9000/mcp` (Streamable HTTP transport, default since v0.1.1; legacy `/sse` returns 404).
 
 ## Image Tags
 
@@ -45,8 +45,8 @@ Multi-arch: `linux/amd64`, `linux/arm64`.
 | `MCP_TRANSPORT` | `streamable-http` | FastMCP transport. Default `streamable-http` (path `/mcp`). Set to `sse` (path `/sse`) for legacy clients. |
 | `NRDS_LOG_LEVEL` | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 | `ALLOWED_ORIGINS` | `*` | CORS allow-list, comma-separated. Set explicitly for production deployments behind a known origin. |
-| `AWS_ACCESS_KEY_ID` | — | AWS credentials for S3 access. Inject at runtime; do not bake into the image. |
-| `AWS_SECRET_ACCESS_KEY` | — | Companion to the above. |
+| `AWS_ACCESS_KEY_ID` | - | AWS credentials for S3 access. Inject at runtime; do not bake into the image. |
+| `AWS_SECRET_ACCESS_KEY` | - | Companion to the above. |
 | `AWS_DEFAULT_REGION` | `us-east-1` | Region for S3 queries. |
 
 For AWS, prefer instance/task IAM roles over static keys when running on AWS infrastructure.
@@ -60,10 +60,9 @@ The container exposes `GET /health` returning `200 {"status":"ok"}`. The Docker 
 | Path | Method | Purpose |
 |---|---|---|
 | `/mcp` | GET, POST | MCP Streamable HTTP transport endpoint (default since v0.1.1). Connect MCP clients here. |
-| `/sse` | GET | MCP SSE transport endpoint (only when `MCP_TRANSPORT=sse`). |
 | `/health` | GET | Liveness probe. |
 
-The MCP tool surface (e.g., `list_available_models`, `query_output_file_from_output_selector`, `lookup_hydrofabric_feature`) is discovered automatically by MCP clients; consult the source for the full list. To render a chart or map from these results, chain into a host-side render tool — this server does not return Plotly figure JSON or map configurations.
+The MCP tool surface (e.g., `list_available_models`, `query_output_file_from_output_selector`, `lookup_hydrofabric_feature`) is discovered automatically by MCP clients; consult the source for the full list. To render a chart or map from these results, chain into a host-side render tool - this server does not return Plotly figure JSON or map configurations.
 
 ## Test Deployment (Google Cloud Run)
 
@@ -113,7 +112,7 @@ asyncio.run(smoke())
 
 ### Redeploy procedure (automated)
 
-Push a `v*` git tag — `release.yml` builds, pushes to ghcr.io, and deploys to Cloud Run automatically:
+Push a `v*` git tag - `release.yml` builds, pushes to ghcr.io, and deploys to Cloud Run automatically:
 
 ```bash
 git tag -a v0.2.0 -m "..."
@@ -124,11 +123,11 @@ The workflow:
 1. Builds + pushes the multi-arch image to `ghcr.io/aquaveo/nrds-mcps:0.2.0` and `:latest`.
 2. Polls ghcr.io until the manifest is visible (eventual-consistency guard).
 3. Runs `gcloud run deploy` against `us-central1-docker.pkg.dev/ibis-436806/nrds-mcps-remote/aquaveo/nrds-mcps:0.2.0` (the AR remote repo proxies ghcr.io transparently).
-4. Cloud Run's startup probe on `/health` gates traffic-shift — a buggy revision is provisioned but never gets traffic.
+4. Cloud Run's startup probe on `/health` gates traffic-shift - a buggy revision is provisioned but never gets traffic.
 5. Workflow polls `/health` (120 s window) for forensic confirmation.
-6. **Workflow probes MCP `tools/list` via FastMCP client** and asserts at least 13 tools registered. Catches tool-init crashes that leave `/health` green but the MCP tool registry empty or short. Threshold is configured in `release.yml` as `EXPECTED_MIN_TOOLS` — bump in lockstep when adding/removing tools.
+6. **Workflow probes MCP `tools/list` via FastMCP client** and asserts at least 10 tools registered. Catches tool-init crashes that leave `/health` green but the MCP tool registry empty or short. Threshold is configured in `release.yml` as `EXPECTED_MIN_TOOLS` - bump in lockstep when adding/removing tools.
 
-If steps 1-5 fail, the previous revision keeps 100% traffic — **failed deploys are non-destructive** at the traffic-shift level. Step 6 (MCP smoke) runs *after* traffic has already flipped, so a failure there means the new revision is broken AND receiving traffic. Recovery is manual rollback: `gcloud run services update-traffic nrds-mcps --region=us-central1 --to-revisions=<previous-revision>=100`.
+If steps 1-5 fail, the previous revision keeps 100% traffic - **failed deploys are non-destructive** at the traffic-shift level. Step 6 (MCP smoke) runs *after* traffic has already flipped, so a failure there means the new revision is broken AND receiving traffic. Recovery is manual rollback: `gcloud run services update-traffic nrds-mcps --region=us-central1 --to-revisions=<previous-revision>=100`.
 
 #### Re-deploy an existing tag
 
@@ -143,7 +142,7 @@ gcloud run deploy nrds-mcps \
   --region=us-central1
 ```
 
-**When NOT to "just push the tag":** if the new release also requires Cloud Run config changes (env vars, runtime SA, IAM roles, ingress settings), the YAML's hard-coded flags will only deploy what's listed. Coordinate config and code together — either update the workflow YAML in the same PR as the code change, or do a manual `gcloud run services update` after.
+**When NOT to "just push the tag":** if the new release also requires Cloud Run config changes (env vars, runtime SA, IAM roles, ingress settings), the YAML's hard-coded flags will only deploy what's listed. Coordinate config and code together - either update the workflow YAML in the same PR as the code change, or do a manual `gcloud run services update` after.
 
 #### Service config lives in the workflow YAML
 
@@ -160,8 +159,8 @@ Or visit the [Cloud Run console](https://console.cloud.google.com/run/detail/us-
 ### Service config (current)
 
 - 2 GiB RAM, 1 vCPU, scale-to-zero, max-instances=2 (free-tier safety cap), 60-min request timeout, public unauthenticated ingress.
-- No AWS credentials — the NRDS S3 bucket (`s3://ciroh-community-ngen-datastream`) is public; `boto3`/`s3fs` connect anonymously.
-- Cold-start latency: ~3–5 s after scale-to-zero.
+- No AWS credentials - the NRDS S3 bucket (`s3://ciroh-community-ngen-datastream`) is public; `boto3`/`s3fs` connect anonymously.
+- Cold-start latency: ~3-5 s after scale-to-zero.
 
 ## Local Development (no Docker)
 
@@ -181,4 +180,4 @@ This creates `.venv-mcp/`, installs `nextgen_mcp/requirements.txt`, and starts t
 
 ## License
 
-MIT — see source repository for details.
+MIT - see source repository for details.

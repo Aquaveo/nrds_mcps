@@ -1,4 +1,4 @@
-"""Tests for nextgen_mcp/_io_config.py — timeout config, helpers, env guards."""
+"""Tests for nextgen_mcp/_io_config.py - timeout config, helpers, env guards."""
 from __future__ import annotations
 
 import importlib
@@ -59,7 +59,7 @@ def test_non_integer_falls_back_to_default(
 
 
 # ---------------------------------------------------------------------------
-# boto3 Config shape — connect_timeout, read_timeout, retries disabled
+# boto3 Config shape - connect_timeout, read_timeout, retries disabled
 # ---------------------------------------------------------------------------
 
 
@@ -67,7 +67,7 @@ def test_s3fs_config_kwargs_carries_timeouts_and_no_retries(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """config_kwargs (not client_kwargs={'config': Config(...)}) is the right
-    shape — s3fs already passes a config kwarg internally, so layering ours
+    shape - s3fs already passes a config kwarg internally, so layering ours
     on top causes 'got multiple values for keyword argument config'.
     config_kwargs is passed by s3fs directly to botocore Config(...).
     """
@@ -82,7 +82,7 @@ def test_s3fs_config_kwargs_carries_timeouts_and_no_retries(
 
 
 # ---------------------------------------------------------------------------
-# s3_filesystem() — skip_instance_cache + client_kwargs propagation
+# s3_filesystem() - skip_instance_cache + client_kwargs propagation
 # ---------------------------------------------------------------------------
 
 
@@ -103,7 +103,7 @@ def test_s3_filesystem_returns_distinct_instances_per_call():
     """With skip_instance_cache=True, repeated calls produce fresh instances.
 
     Without this, a stale cached filesystem could be returned and silently
-    drop the per-call timeout config — exactly the bug the auto-fix
+    drop the per-call timeout config - exactly the bug the auto-fix
     addresses.
     """
     from nextgen_mcp import _io_config
@@ -114,14 +114,14 @@ def test_s3_filesystem_returns_distinct_instances_per_call():
 
 
 # ---------------------------------------------------------------------------
-# duckdb_connect_with_httpfs() — http_timeout is in SECONDS, not milliseconds
+# duckdb_connect_with_httpfs() - http_timeout is in SECONDS, not milliseconds
 # ---------------------------------------------------------------------------
 
 
 def test_duckdb_connect_sets_http_timeout_in_seconds(monkeypatch: pytest.MonkeyPatch):
     """DuckDB 1.x http_timeout is in seconds.
 
-    A prior plan draft used `* 1000` (treating it as milliseconds) — that
+    A prior plan draft used `* 1000` (treating it as milliseconds) - that
     would have produced an 8.3-hour effective timeout. This test pins the
     correct unit.
     """
@@ -132,7 +132,7 @@ def test_duckdb_connect_sets_http_timeout_in_seconds(monkeypatch: pytest.MonkeyP
         result = con.execute("SELECT current_setting('http_timeout')").fetchone()
         assert result is not None
         # DuckDB returns the setting value as an int (25 seconds).
-        # A previous draft used `* 1000` (treating it as ms) — that would
+        # A previous draft used `* 1000` (treating it as ms) - that would
         # have set 25000 here. This pins the correct unit.
         assert int(result[0]) == 25
     finally:

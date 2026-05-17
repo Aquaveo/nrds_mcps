@@ -1,4 +1,11 @@
-# nextgen_plugins/chatbox/rest.py
+"""
+file logic.py
+
+Description: Implements the core logic for listing and querying NRDS output files on S3, as well as looking up hydrofabric features. 
+This is the main "M" in MCP, and is called
+
+"""
+
 import os
 import json
 import logging
@@ -10,7 +17,7 @@ from botocore.exceptions import ClientError
 
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-from .validators import OutputsFilesQuery
+from .validation import OutputsFilesQuery
 from pydantic import ValidationError
 from .utils_rest import (
     _extract_yyyymmdd_from_date_folder,
@@ -19,7 +26,6 @@ from .utils_rest import (
     _duckdb_query_parquet,
     _duckdb_query_netcdf,
     _get_troute_df,
-    _duckdb_query_hydrofabric_parquet,
     _duckdb_lookup_hydrofabric_feature,
     _normalize_record,
     _get_feature_center,
@@ -418,7 +424,7 @@ def query_output_file(s3_url, query) -> Dict:
         # LLM-supplied SQL programmer error. Unlike the hardcoded-SQL
         # paths (which re-raise via _is_duckdb_programmer_error), these
         # errors are RECOVERABLE if the LLM gets a structured envelope
-        # with the available column list as fix_hint — same shape as the
+        # with the available column list as fix_hint - same shape as the
         # input-validation middleware's invalid_args response. Observed
         # 2026-05-10: qwen stalled on a BinderException when this re-raised
         # as a protocol error; with the structured envelope below the
@@ -474,6 +480,7 @@ def query_output_file(s3_url, query) -> Dict:
             file_type=kind,
             query=query,
         )
+
 
 def query_output_file_from_output_selector(
     model,
@@ -554,69 +561,6 @@ def query_output_file_from_output_selector(
 
     return query_result
 
-def query_hydrofabric_parquet_file(hydrofabric_id: str, limit: int = 50) -> Dict:
-    """Run a hydrofabric id lookup against the hydrofabric parquet file on S3."""
-    logger.info(
-        "Received request to query hydrofabric with hydrofabric_id=%s limit=%s",
-        hydrofabric_id,
-        limit,
-    )
-
-    hydrofabric_id = (hydrofabric_id or "").strip()
-    if not hydrofabric_id:
-        return _error_payload(
-            "bad_request",
-            "hydrofabric_id is required",
-            file=HYDROFABRIC_INDEX_URL,
-            hydrofabric_id=hydrofabric_id,
-            columns=[],
-            rows=0,
-            data=[],
-        )
-
-    try:
-        df = _duckdb_query_hydrofabric_parquet(hydrofabric_id=hydrofabric_id, limit=limit)
-        logger.info(
-            "Hydrofabric query returned %s rows and columns: %s",
-            len(df),
-            df.columns.tolist(),
-        )
-        return _success_payload(
-            file=HYDROFABRIC_INDEX_URL,
-            hydrofabric_id=hydrofabric_id,
-            columns=list(df.columns),
-            rows=int(len(df)),
-            data=df.to_dict(orient="records"),
-        )
-    except (OSError, ClientError, duckdb.Error) as e:
-        if _is_duckdb_programmer_error(e):
-            raise
-        code, msg, fix_hint = _classify_io_error(e)
-        logger.error(
-            "IO error %s on hydrofabric parquet %s: %s",
-            type(e).__name__,
-            HYDROFABRIC_INDEX_URL,
-            e,
-        )
-        if code == "not_found":
-            return _error_payload(
-                code,
-                msg,
-                fix_hint=fix_hint,
-                file=HYDROFABRIC_INDEX_URL,
-                hydrofabric_id=hydrofabric_id,
-                columns=[],
-                rows=0,
-                data=[],
-            )
-        return _error_payload(
-            code,
-            msg,
-            fix_hint=fix_hint,
-            file=HYDROFABRIC_INDEX_URL,
-            hydrofabric_id=hydrofabric_id,
-        )
-
 
 def _bbox_from_row(row: Dict[str, Any]) -> Optional[List[float]]:
     """Compute a [minLon, minLat, maxLon, maxLat] bbox from a hydrofabric row.
@@ -645,13 +589,15 @@ def _bbox_from_row(row: Dict[str, Any]) -> Optional[List[float]]:
     return None
 
 
-def lookup_hydrofabric_feature(hydrofabric_id: str) -> Dict[str, Any]:
-    """Look up one hydrofabric feature by id and return data only.
+def lookup_hydrofabric_feature(
+    hydrofabric_id: str, limit: int = 1
+) -> Dict[str, Any]:
+    """Look up hydrofabric features by id and return data only.
 
     Returns a flat shape:
-      - rows: list of matching rows from the hydrofabric index
-      - pmtiles_layer: the PMTiles layer name associated with the feature, or None
-      - bbox: [minLon, minLat, maxLon, maxLat] bounding the feature, or None
+      - rows: list of matching rows from the hydrofabric index (up to ``limit``)
+      - pmtiles_layer: the PMTiles layer name associated with the top match, or None
+      - bbox: [minLon, minLat, maxLon, maxLat] bounding the top match, or None
 
     On empty match: rows=[], pmtiles_layer=None, bbox=None.
     The host is responsible for assembling any map view from this data.
@@ -667,7 +613,7 @@ def lookup_hydrofabric_feature(hydrofabric_id: str) -> Dict[str, Any]:
         )
 
     try:
-        df = _duckdb_lookup_hydrofabric_feature(hydrofabric_id)
+        df = _duckdb_lookup_hydrofabric_feature(hydrofabric_id, limit=limit)
         if df.empty:
             return _success_payload(
                 rows=[],
@@ -705,4 +651,25 @@ def lookup_hydrofabric_feature(hydrofabric_id: str) -> Dict[str, Any]:
             rows=[],
             pmtiles_layer=None,
             bbox=None,
+        )
+    
+
+def get_hydrofabric_pmtiles_layers() -> Dict[str, Any]:
+    """Return the list of hydrofabric layers and their associated PMTiles layer names."""
+    try:
+        layers = []
+        for layer_key, cfg in HYDROFABRIC_LAYER_CONFIG.items():
+            layers.append({
+                "id": layer_key,
+                "map_layer_id": cfg.get("map_layer_id"),
+                "url": cfg.get("pmtiles_url"),
+                "id_property": cfg.get("id_property"),
+            })
+        return _success_payload(layers=layers)
+    except Exception as e:
+        logger.error("Error getting hydrofabric layers: %s", e)
+        return _error_payload(
+            "execution_error",
+            "Unexpected error getting hydrofabric layers.",
+            details=str(e),
         )

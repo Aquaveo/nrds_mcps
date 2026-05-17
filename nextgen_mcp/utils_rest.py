@@ -10,10 +10,8 @@ import xarray as xr
 from ._io_config import HYDROFABRIC_INDEX_URL, duckdb_connect_with_httpfs, open_fsspec_file
 
 
-# Per-code sanitized message + fix_hint. NEVER use str(exc) directly — the
-# raw message from botocore.ClientError often embeds AWS account IDs, S3
-# bucket names, ARNs, and request IDs; from duckdb.IOException it can
-# embed full presigned URLs. The LLM-facing envelope sees the sanitized
+# Per-code sanitized message + fix_hint. NEVER use str(exc) directly - 
+# The LLM-facing envelope sees the sanitized
 # message only; the full str(exc) is logged at WARNING+ for operators.
 _IO_ERROR_CATALOG = {
     "timeout": (
@@ -24,29 +22,67 @@ _IO_ERROR_CATALOG = {
     ),
     "permission_denied": (
         "Access denied to the upstream data store.",
-        "Access denied to the upstream data store. Do NOT retry — this is "
+        "Access denied to the upstream data store. Do NOT retry - this is "
         "a deployment configuration issue. Surface to the user as a "
         "server-side problem.",
     ),
     "upstream_error": (
         "Upstream data store error.",
-        "Upstream data store error. Do NOT retry the same call — try a "
+        "Upstream data store error. Do NOT retry the same call - try a "
         "different selector combination (model/date/forecast/vpu) before "
         "reporting failure to the user.",
     ),
     "not_found": (
         "Requested resource was not found.",
-        "Requested resource was not found. Do NOT retry the same call — "
+        "Requested resource was not found. Do NOT retry the same call - "
         "the selector combination does not match any available data. Try "
         "a different selector or check what's available via the "
         "corresponding list_* tool.",
     ),
     "execution_error": (
         "Internal execution error.",
-        "Internal execution error. Do NOT retry — surface to the user. If "
+        "Internal execution error. Do NOT retry - surface to the user. If "
         "reproducible, this is a server-side bug.",
     ),
 }
+
+_OUTPUT_SQL_START_RE = re.compile(r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b)")
+_OUTPUT_SQL_FROM_OUTPUT_RE = re.compile(r"(?is)\bFROM\s+output\b")
+_OUTPUT_SQL_FORBIDDEN_RE = re.compile(
+    r"(?is)\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|COPY|ATTACH|DETACH|CALL|PRAGMA|VACUUM|TRUNCATE|MERGE|REPLACE)\b"
+)
+
+HYDROFABRIC_LAYER_CONFIG = {
+    "flowpaths": {
+        "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/flowpaths.pmtiles",
+        "map_layer_id": "flowpaths",
+        "id_property": "id",
+    },
+    "gage": {
+        "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/gage.pmtiles",
+        "map_layer_id": "conus-gauges",
+        "id_property": "id",
+    },
+    "divides": {
+        "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/divides.pmtiles",
+        "map_layer_id": "divides",
+        "id_property": "divide_id",
+    },
+    "hydrolocations": {
+        "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/hydrolocations.pmtiles",
+        "map_layer_id": "nexus-points",
+        "id_property": "id",
+    },
+}
+
+# Regex to pull DuckDB's "Candidate bindings:" column suggestions out of
+# a BinderException message. Format observed:
+#     Binder Error: Referenced column "X" not found in FROM clause!
+#     Candidate bindings: "output.feature_id", "output.velocity"
+# The strip after the dot is to normalize "output.velocity" -> "velocity".
+_DUCKDB_CANDIDATES_RE = re.compile(
+    r'Candidate bindings:\s*(.+?)(?:\n|$)', re.IGNORECASE
+)
 
 
 def _classify_io_error(exc: BaseException) -> tuple[str, str, str]:
@@ -54,10 +90,10 @@ def _classify_io_error(exc: BaseException) -> tuple[str, str, str]:
 
     Maps the raised exception class to a stable error code and per-code
     sanitized text. The raw ``str(exc)`` is intentionally NOT propagated
-    into the LLM-facing envelope — see _IO_ERROR_CATALOG for the rationale.
+    into the LLM-facing envelope - see _IO_ERROR_CATALOG for the rationale.
 
     Programmer-error DuckDB classes (BinderException, ParserException,
-    CatalogException) MUST be re-raised before reaching this helper —
+    CatalogException) MUST be re-raised before reaching this helper -
     classifying them as execution_error would mask wrong-column / malformed
     -SQL / missing-table bugs and let an LLM retry forever. Callers should
     check ``isinstance(exc, (duckdb.BinderException, duckdb.ParserException,
@@ -96,7 +132,6 @@ def _classify_io_error(exc: BaseException) -> tuple[str, str, str]:
     message, fix_hint = _IO_ERROR_CATALOG[code]
     return code, message, fix_hint
 
-
 def _is_duckdb_programmer_error(exc: BaseException) -> bool:
     """True if exc is a DuckDB SQL programmer-error class that must NOT be
     caught when the SQL was hardcoded by us.
@@ -104,11 +139,10 @@ def _is_duckdb_programmer_error(exc: BaseException) -> bool:
     Wrong-column / malformed-SQL / missing-table errors in OUR hardcoded
     SQL should crash visibly so they're discoverable in observability logs,
     not normalized to a polite envelope. CRITICAL: this guard applies ONLY
-    to hardcoded-SQL call sites (e.g. _duckdb_query_hydrofabric_parquet,
-    _duckdb_lookup_hydrofabric_feature).
+    to hardcoded-SQL call sites (e.g. _duckdb_lookup_hydrofabric_feature).
 
     For LLM-supplied-SQL call sites (query_output_file's `query` arg), use
-    ``_classify_llm_sql_error`` instead — the LLM CAN recover from these
+    ``_classify_llm_sql_error`` instead - the LLM CAN recover from these
     if given a structured envelope with the column list as fix_hint, the
     same pattern InputValidationEnvelopeMiddleware uses for kwarg errors.
     """
@@ -120,17 +154,6 @@ def _is_duckdb_programmer_error(exc: BaseException) -> bool:
             duckdb.CatalogException,
         ),
     )
-
-
-# Regex to pull DuckDB's "Candidate bindings:" column suggestions out of
-# a BinderException message. Format observed:
-#     Binder Error: Referenced column "X" not found in FROM clause!
-#     Candidate bindings: "output.feature_id", "output.velocity"
-# The strip after the dot is to normalize "output.velocity" -> "velocity".
-_DUCKDB_CANDIDATES_RE = re.compile(
-    r'Candidate bindings:\s*(.+?)(?:\n|$)', re.IGNORECASE
-)
-
 
 def _extract_duckdb_candidates(exc_message: str) -> list[str]:
     """Pull the candidate column names out of a DuckDB BinderException message.
@@ -154,7 +177,6 @@ def _extract_duckdb_candidates(exc_message: str) -> list[str]:
         if bare and bare not in columns:
             columns.append(bare)
     return columns
-
 
 def _classify_llm_sql_error(
     exc: BaseException, file_url: str, query: str
@@ -224,40 +246,6 @@ def _classify_llm_sql_error(
     code, msg, fix_hint = _classify_io_error(exc)
     return code, msg, fix_hint, []
 
-
-_OUTPUT_SQL_START_RE = re.compile(r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b)")
-_OUTPUT_SQL_FROM_OUTPUT_RE = re.compile(r"(?is)\bFROM\s+output\b")
-_OUTPUT_SQL_FORBIDDEN_RE = re.compile(
-    r"(?is)\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|COPY|ATTACH|DETACH|CALL|PRAGMA|VACUUM|TRUNCATE|MERGE|REPLACE)\b"
-)
-
-HYDROFABRIC_LAYER_CONFIG = {
-    "flowpaths": {
-        "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/flowpaths.pmtiles",
-        "map_layer_id": "flowpaths",
-        "id_property": "id",
-        "default_zoom": 12,
-    },
-    "gage": {
-        "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/gage.pmtiles",
-        "map_layer_id": "conus-gauges",
-        "id_property": "id",
-        "default_zoom": 12,
-    },
-    "divides": {
-        "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/divides.pmtiles",
-        "map_layer_id": "divides",
-        "id_property": "divide_id",
-        "default_zoom": 10,
-    },
-    "hydrolocations": {
-        "pmtiles_url": "https://communityhydrofabric.s3.us-east-1.amazonaws.com/map/kepler/hydrolocations.pmtiles",
-        "map_layer_id": "nexus-points",
-        "id_property": "id",
-        "default_zoom": 12,
-    },
-}
-
 def _normalize_output_file_url(s3_url: str) -> str:
     file_url = str(s3_url or "").strip()
     if file_url.startswith("s3://ciroh-community-ngen-datastream"):
@@ -266,7 +254,6 @@ def _normalize_output_file_url(s3_url: str) -> str:
             "https://ciroh-community-ngen-datastream.s3.us-east-1.amazonaws.com",
         )
     return file_url
-
 
 def _detect_output_file_kind(file_url: str) -> Optional[str]:
     lower = str(file_url or "").lower()
@@ -380,79 +367,10 @@ def _get_feature_center(row: Dict[str, Any]) -> Optional[list]:
 
     return None
 
-def _duckdb_lookup_hydrofabric_feature(hydrofabric_id: str) -> pd.DataFrame:
-    con = duckdb_connect_with_httpfs()
-    try:
-        con.execute(
-            f"""
-            CREATE OR REPLACE TEMP VIEW output AS
-            SELECT *
-            FROM read_parquet('{HYDROFABRIC_INDEX_URL}')
-            """
-        )
-
-        sql = """
-        WITH matches AS (
-            SELECT
-                *,
-                CASE
-                    WHEN lower(coalesce(id, '')) = lower(?) THEN 0
-                    WHEN lower(coalesce(divide_id, '')) = lower(?) THEN 1
-                    WHEN lower(coalesce(id, '')) LIKE '%' || lower(?) || '%' THEN 2
-                    WHEN lower(coalesce(divide_id, '')) LIKE '%' || lower(?) || '%' THEN 3
-                    ELSE 4
-                END AS match_rank,
-                CASE
-                    WHEN lower(coalesce(id, '')) = lower(?) THEN 'id'
-                    WHEN lower(coalesce(divide_id, '')) = lower(?) THEN 'divide_id'
-                    WHEN lower(coalesce(id, '')) LIKE '%' || lower(?) || '%' THEN 'id'
-                    WHEN lower(coalesce(divide_id, '')) LIKE '%' || lower(?) || '%' THEN 'divide_id'
-                    ELSE NULL
-                END AS matched_column,
-                CASE
-                    WHEN lower(coalesce(id, '')) = lower(?) THEN 'exact'
-                    WHEN lower(coalesce(divide_id, '')) = lower(?) THEN 'exact'
-                    WHEN lower(coalesce(id, '')) LIKE '%' || lower(?) || '%' THEN 'substring'
-                    WHEN lower(coalesce(divide_id, '')) LIKE '%' || lower(?) || '%' THEN 'substring'
-                    ELSE NULL
-                END AS match_type
-            FROM output
-        )
-        SELECT * EXCLUDE (match_rank)
-        FROM matches
-        WHERE match_rank < 4
-        ORDER BY match_rank, id, divide_id
-        LIMIT 1
-        """
-
-        params = [hydrofabric_id] * 12
-        return con.execute(sql, params).df()
-
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
-
-def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
-    """Load the t-route crosswalk DataFrame.
-
-    Uses ``open_fsspec_file`` so the timeout-configured fsspec client
-    reaches the underlying h5netcdf transport. ``xarray.open_dataset``
-    cannot be called directly on a URL with a custom fsspec config — the
-    OpenFile context manager handles that.
-    """
-
-    with open_fsspec_file(s3_nc_url) as f:
-        nc_xarray = xr.open_dataset(f, engine="h5netcdf")
-        nc_df = nc_xarray.to_dataframe()
-        nc_df = nc_df.reset_index()
-
-    return nc_df
-
-def _duckdb_query_hydrofabric_parquet(hydrofabric_id: str, limit: int = 50) -> pd.DataFrame:
+def _duckdb_lookup_hydrofabric_feature(
+    hydrofabric_id: str, limit: int = 1
+) -> pd.DataFrame:
     """Lookup hydrofabric rows by id/divide_id using exact and substring matching."""
-
     con = duckdb_connect_with_httpfs()
     try:
         con.execute(
@@ -499,11 +417,28 @@ def _duckdb_query_hydrofabric_parquet(hydrofabric_id: str, limit: int = 50) -> p
 
         params = [hydrofabric_id] * 12 + [limit]
         return con.execute(sql, params).df()
+
     finally:
         try:
             con.close()
         except Exception:
             pass
+
+def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
+    """Load the t-route crosswalk DataFrame.
+
+    Uses ``open_fsspec_file`` so the timeout-configured fsspec client
+    reaches the underlying h5netcdf transport. ``xarray.open_dataset``
+    cannot be called directly on a URL with a custom fsspec config - the
+    OpenFile context manager handles that.
+    """
+
+    with open_fsspec_file(s3_nc_url) as f:
+        nc_xarray = xr.open_dataset(f, engine="h5netcdf")
+        nc_df = nc_xarray.to_dataframe()
+        nc_df = nc_df.reset_index()
+
+    return nc_df
 
 def _duckdb_query_parquet(file_url: str, query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query against a parquet file exposed as temp view `output`."""
@@ -590,4 +525,3 @@ def _extract_yyyymmdd_from_date_folder(folder: str) -> str | None:
 def _label_from_id(value: str) -> str:
     """Default label: replace underscores with spaces."""
     return value.replace("_", " ")
-

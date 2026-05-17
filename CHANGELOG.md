@@ -7,9 +7,99 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.2.0] — 2026-05-04
+### Removed (BREAKING - tool surface)
 
-### Removed (BREAKING — tool surface)
+- **`query_hydrofabric_parquet_file` is removed.** Its hydrofabric-id
+  search overlapped almost entirely with `lookup_hydrofabric_feature`
+  (same parquet, same `id`/`divide_id` match-ranking SQL); the only
+  meaningful differences were the output envelope shape and the row
+  limit. The merged tool keeps `lookup_hydrofabric_feature`'s
+  data-only envelope (`{rows, pmtiles_layer, bbox}`) and grows a
+  `limit` argument (default `1`, max `200`) for callers that need
+  more than one match.
+
+### Changed
+
+- `lookup_hydrofabric_feature` accepts an optional `limit: int`
+  argument (default `1`, range `1..200`). Previous behavior is
+  preserved when callers omit `limit`.
+- `prompts/list` drops the `query_hydrofabric` slash-command template
+  (it drove the removed tool); use `lookup_feature` instead.
+- `EXPECTED_MIN_TOOLS` in `release.yml` bumped 11 → 10.
+
+### Changed
+
+- **Date regex deduplicated.** `utils.DATE_PATTERN` and
+  `validation.DATE_RE` both defined the same regex (`^(?:\d{4}-\d{2}-
+  \d{2}|\d{4}/\d{2}/\d{2})$`). The pattern string now lives in
+  `validation.py` only; `DATE_RE` is `re.compile(DATE_PATTERN)`, so
+  the compiled object and the string-for-pydantic-Field are
+  guaranteed to stay in lockstep. `tools.py` imports `DATE_PATTERN`
+  from `.validation` instead of `.utils`.
+
+### Removed
+
+- **`_helpers.py` merged into `utils.py`.** Both files held tool-body
+  helpers and the split was arbitrary - `_helpers` already imported
+  date constants and `_parse_iso_date` from `utils`. Consolidating
+  removes the cross-module dependency between two files with the
+  same conceptual role. `_preview_text`, `_validate_date_bounds`,
+  `_parse_date_or_today`, `_require`, and the `_MIN_ALLOWED_DATE`
+  constant now live in `utils.py`. Callers update their import path
+  from `._helpers` to `.utils`.
+
+- **`utils._get_json_raw` and its endpoint dispatch table are removed.**
+  The function was a vestigial REST-shim from an earlier era when these
+  MCP tools wrapped an HTTP API; every `_get_json_raw("foo", params=p)`
+  call has been rewritten to call `logic.foo(**p)` directly. Tools in
+  `tools.py` now import from `logic` directly. Net effect: ~50 lines
+  removed from `utils.py`, one less indirection layer, and tool call
+  graphs are now visible to grep without chasing a string-keyed dispatch.
+
+- **`test_mcp/test_large_catalog_server.py` is removed.** The fixture
+  was a standalone runnable for exercising FastMCP's
+  `BM25SearchTransform` search-facade against a synthetic large tool
+  catalog. Long-catalog handling now lives on the client side, so the
+  server has no search-facade surface to load-test.
+- BM25-related comment in
+  `nextgen_mcp/middleware/_input_validation_middleware.py` simplified
+  - the underlying rationale (MCP protocol already associates tool
+  result with call) stands; the search-facade leak motivation no
+  longer applies.
+
+### Fixed
+
+- Latent `NameError` in `tools.py`: `_preview_text` was used in
+  `query_output_file_from_output_selector` and `query_output_file` tool
+  bodies but never imported. Tests passed only because the line was
+  unreachable during collection. Added to the `_helpers` import.
+- Python-level name collision between the `lookup_hydrofabric_feature`
+  MCP tool function and the `logic.lookup_hydrofabric_feature`
+  function. The tool's Python def is renamed to
+  `lookup_hydrofabric_feature_tool` (the MCP-facing name stays
+  `lookup_hydrofabric_feature` via the decorator's `name=` arg),
+  consistent with every other tool in the file.
+- Pre-existing relative-import typo (`..middleware`) in `_mcp.py`,
+  `_helpers.py`, and `tools.py` corrected to `.middleware`. The
+  middleware package is a subpackage of `nextgen_mcp/`, not a sibling.
+- Stale `from middleware._input_validation_middleware import ...` paths
+  in `test_mcp/test_middleware.py` updated to
+  `from nextgen_mcp.middleware._input_validation_middleware import ...`.
+- README dead references cleaned up: top-level README had a stray
+  `=`, an unclosed parenthesis, and a "13 tools" smoke-gate count
+  that drifted from `release.yml`. `nextgen_mcp/README.md` was
+  rewritten as a short dev-loop pointer to the canonical top-level
+  README - old content referenced the pre-2026-05-02 `nextgen_plugins/`
+  layout, a `/sse` default, dead `NRDS_API_HOST`/`OLLAMA_HOST` env
+  vars, removed `create_plotly_chart_*` tools, and a `.devcontainer/`
+  directory that no longer exists in this repo.
+- `validators.py` and `validations.py` merged into a single
+  `validation.py`. The duplicate `Forecasts` / `FORECASTS` `Literal`
+  collapsed to one canonical `FORECASTS`.
+
+## [0.2.0] - 2026-05-04
+
+### Removed (BREAKING - tool surface)
 
 - **`create_plotly_chart_from_output_selector` is removed.** Use
   `query_output_file_from_output_selector` to fetch rows, then call
@@ -55,27 +145,25 @@ The remaining 11 tools (lists, resolvers, queries) are unchanged.
 
 ### Internal cleanup
 
-- `nextgen_mcp/rest.py` — chart helpers
+- `nextgen_mcp/rest.py` - chart helpers
   (`create_plotly_chart_from_output_file`,
   `create_plotly_chart_from_parquet_output_file`) deleted.
   `build_hydrofabric_feature_map_config` replaced with the data-only
   `lookup_hydrofabric_feature` (uses new `_bbox_from_row` helper plus
   the existing `_duckdb_lookup_hydrofabric_feature`,
   `_normalize_record`, `_get_feature_center` from `utils_rest.py`).
-- `nextgen_mcp/utils.py` — corresponding imports + dispatch entries
+- `nextgen_mcp/utils.py` - corresponding imports + dispatch entries
   removed; new dispatch entry for `lookup_hydrofabric_feature` added.
 
-### Changed (BREAKING — URL path, carried over from prior unreleased)
+### Changed (BREAKING - URL path, carried over from prior unreleased)
 
 - **Default transport switched from SSE to Streamable HTTP.** The MCP
   endpoint moves from `/sse` to `/mcp` (FastMCP default for streamable-http).
   The legacy `/sse` URL returns 404 in default config.
-- **Migration:** clients with hardcoded `…/sse` URLs (e.g., tethysdash's
-  saved MCP server config) must update to `…/mcp`. chatbox-core's
+- **Migration:** clients with hardcoded `.../sse` URLs (e.g., tethysdash's
+  saved MCP server config) must update to `.../mcp`. chatbox-core's
   `pickTransport()` auto-detects from the URL suffix, so only the URL
-  string changes — no code change in consumers.
-- To run the legacy SSE transport, set `MCP_TRANSPORT=sse` env var; the
-  server will revert to `/sse` and the legacy `event: endpoint` flow.
+  string changes - no code change in consumers.
 
 ### Fixed
 
@@ -125,11 +213,11 @@ The remaining 11 tools (lists, resolvers, queries) are unchanged.
 
 ### Changed
 
-- Redeploy workflow simplified to a single `gcloud run deploy` command —
+- Redeploy workflow simplified to a single `gcloud run deploy` command -
   no more manual `docker pull` / `tag` / `push` mirror step. AR remote
   repo handles ghcr.io→AR proxying transparently.
 
-## [0.1.0] — 2026-05-02
+## [0.1.0] - 2026-05-02
 
 First deployable container image.
 
@@ -138,10 +226,7 @@ First deployable container image.
 - Multi-stage `Dockerfile` (Python 3.11-slim builder + slim runtime) producing
   a non-root image with `HEALTHCHECK` polling `GET /health` every 30 s.
 - `/health` route returning `{"status":"ok"}` for liveness probes.
-- Env-var configurable `MCP_HOST`, `MCP_PORT`, `MCP_TRANSPORT` (defaults
-  `0.0.0.0`, `9000`, `sse` — backwards-compatible with the pre-container
-  hardcoded values).
-- `nextgen_mcp/requirements.lock` — full transitive closure (99 pinned
+- `nextgen_mcp/requirements.lock` - full transitive closure (99 pinned
   packages) for reproducible builds.
 - GitHub Actions CI: Python smoke import + Docker build + container smoke
   (start image, poll `/health`, stop) on every push and PR.
@@ -154,7 +239,7 @@ First deployable container image.
 ### Notes
 
 - Image size: ~750 MB (numpy/pandas/pyarrow account for most). Slim base
-  used; further reduction (distroless, alpine) deferred — alpine risks
+  used; further reduction (distroless, alpine) deferred - alpine risks
   musl/glibc compatibility for prebuilt scientific Python wheels.
 - The `scripts/setup-mcp.sh` developer workflow is unchanged; container
   is the deploy path.

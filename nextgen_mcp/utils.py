@@ -1,83 +1,14 @@
-# utils.py
-import os
 import re
 from typing import Dict, Any, Optional
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
-from .validators import normalize_vpu
-from .rest import (
-    list_available_models,
-    list_available_dates,
-    list_available_forecasts,
-    list_available_cycles,
-    list_available_vpus,
-    list_available_output_files,
-    get_output_file,
-    query_output_file,
-    query_output_file_from_output_selector,
-    query_hydrofabric_parquet_file,
-    lookup_hydrofabric_feature,
-)
 
-DATE_PATTERN = r"^(?:\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2})$"
+from ._mcp import LOGGER
+from .validation import normalize_vpu
+from .middleware._input_validation_middleware import InvalidLLMInputError
+
 DEFAULT_START = "2025-08-01"
 DEFAULT_TZ = ZoneInfo("America/Denver")
-
-def _get_json_raw(endpoint_key: str, params: Optional[Dict[str, Any]] = None, **_) -> Dict[str, Any]:
-    p = params or {}
-
-    if endpoint_key == "list_available_models":
-        return list_available_models()
-
-    if endpoint_key == "list_available_dates":
-        return list_available_dates(model=p["model"])
-
-    if endpoint_key == "list_available_forecasts":
-        return list_available_forecasts(model=p["model"], date=p["date"])
-
-    if endpoint_key == "list_available_cycles":
-        return list_available_cycles(model=p["model"], date=p["date"], forecast=p["forecast"])
-
-    if endpoint_key == "list_available_vpus":
-        return list_available_vpus(model=p["model"], date=p["date"], forecast=p["forecast"], cycle=p["cycle"])
-
-    if endpoint_key == "list_available_output_files":
-        return list_available_output_files(data=p)
-
-    if endpoint_key == "get_output_file":
-        return get_output_file(
-            model=p["model"], date=p["date"], forecast=p["forecast"], cycle=p["cycle"], vpu=p["vpu"],
-            file_name=p.get("file_name"), index=p.get("index"), ensemble=p.get("ensemble")
-        )
-    
-    if endpoint_key == "query_output_file":
-        return query_output_file(s3_url=p["s3_url"], query=p["query"])
-    
-    if endpoint_key == "query_output_file_from_output_selector":
-        return query_output_file_from_output_selector(
-            model=p["model"],
-            date=p["date"],
-            forecast=p["forecast"],
-            cycle=p["cycle"],
-            vpu=p["vpu"],
-            query=p["query"],
-            ensemble=p.get("ensemble"),
-            file_name=p.get("file_name"),
-            index=p.get("index"),
-        )
-
-    if endpoint_key == "query_hydrofabric_parquet_file":
-        return query_hydrofabric_parquet_file(
-            hydrofabric_id=p["hydrofabric_id"],
-            limit=p["limit"]
-        )
-    
-    if endpoint_key == "lookup_hydrofabric_feature":
-        return lookup_hydrofabric_feature(
-            hydrofabric_id=p["hydrofabric_id"],
-        )
-
-    raise KeyError(f"Unknown endpoint_key: {endpoint_key}")
 
 
 def _as_id(value: str) -> str:
@@ -176,4 +107,67 @@ def _date_from_item(d: dict) -> Optional[date]:
         except Exception:
             return None
 
+    return None
+
+
+_MIN_ALLOWED_DATE = _parse_iso_date(DEFAULT_START)
+
+
+def _preview_text(value: Optional[str], limit: int = 200) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).replace("\n", " ").strip()
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+def _validate_date_bounds(d, field_name: str):
+    today = datetime.now(DEFAULT_TZ).date()
+    LOGGER.debug(
+        "Validating date bounds for field=%s value=%s allowed_range=[%s, %s]",
+        field_name,
+        d,
+        _MIN_ALLOWED_DATE,
+        today,
+    )
+    if d < _MIN_ALLOWED_DATE or d > today:
+        LOGGER.warning(
+            "Date validation failed for field=%s value=%s allowed_range=[%s, %s]",
+            field_name,
+            d,
+            _MIN_ALLOWED_DATE,
+            today,
+        )
+        raise InvalidLLMInputError(
+            f"'{field_name}' must be between {_MIN_ALLOWED_DATE} and {today} (got {d})"
+        )
+    return d
+
+
+def _parse_date_or_today(date_str: Optional[str], field_name: str):
+    LOGGER.debug("Parsing date for field=%s raw_value=%s", field_name, date_str)
+    d = (
+        _parse_iso_date(date_str)
+        if date_str is not None
+        else datetime.now(DEFAULT_TZ).date()
+    )
+    validated = _validate_date_bounds(d, field_name)
+    LOGGER.debug("Parsed date for field=%s resolved_value=%s", field_name, validated)
+    return validated
+
+
+def _require(**kwargs):
+    """Validate that required parameters are not None. Returns error dict or None."""
+    missing = [k for k, v in kwargs.items() if v is None]
+    if missing:
+        discovery = {
+            "model": "list_available_models",
+            "forecast": "list_available_forecasts",
+            "vpu": "list_available_vpus",
+            "query": "the query is required",
+        }
+        hints = [f"{k} (use {discovery.get(k, 'discovery')})" for k in missing]
+        return {
+            "error": f"Missing required parameters: {', '.join(hints)}. "
+            "Call the appropriate discovery tool first."
+        }
     return None

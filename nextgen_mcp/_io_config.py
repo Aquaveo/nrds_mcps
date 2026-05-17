@@ -1,4 +1,4 @@
-"""Centralized IO configuration for nrds_mcps — timeouts and helper factories.
+"""Centralized IO configuration for nrds_mcps - timeouts and helper factories.
 
 All outbound network IO (S3 via fsspec, DuckDB httpfs, NetCDF via xarray)
 goes through helpers in this module so a single ``NRDS_HTTP_TIMEOUT_SECONDS``
@@ -13,7 +13,7 @@ Per the 2026-05-10-004 error-handling efficiency plan:
   drop the timeout config.
 - botocore retries are disabled (``max_attempts=1``) so the per-request
   budget isn't multiplied by the default 3 retry attempts.
-- DuckDB http_timeout is in SECONDS (not milliseconds — DuckDB 1.x docs).
+- DuckDB http_timeout is in SECONDS (not milliseconds - DuckDB 1.x docs).
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SECONDS = 60
 
-# Hydrofabric index parquet — the canonical lookup table for flowpath /
+# Hydrofabric index parquet - the canonical lookup table for flowpath /
 # divide / etc. feature metadata. Single source of truth here so the
 # rest-shim and the utils_rest helpers stay in sync.
 HYDROFABRIC_INDEX_URL = (
@@ -62,7 +62,7 @@ HTTP_TIMEOUT_SECONDS: int = _read_timeout_env()
 
 
 def _s3fs_config_kwargs() -> dict:
-    """Build config_kwargs for s3fs / fsspec("s3", ...) — passed directly
+    """Build config_kwargs for s3fs / fsspec("s3", ...) - passed directly
     to botocore.client.Config(...) by s3fs.
 
     Cannot use ``client_kwargs={"config": Config(...)}`` because s3fs
@@ -73,7 +73,7 @@ def _s3fs_config_kwargs() -> dict:
     ``config_kwargs`` is the s3fs-supported alternative.
 
     Disabling retries (``max_attempts=1``) ensures the per-request budget
-    isn't multiplied by the default 3 retry attempts — a 60s timeout means
+    isn't multiplied by the default 3 retry attempts - a 60s timeout means
     60s, not potentially 180s.
     """
     return {
@@ -105,7 +105,7 @@ def duckdb_connect_with_httpfs(database: str = ":memory:") -> duckdb.DuckDBPyCon
     """Return a DuckDB connection with httpfs loaded and http_timeout set.
 
     ``SET http_timeout = N`` is in SECONDS (verified against DuckDB 1.x
-    settings docs — `'HTTP timeout read/write/connection/retry (in seconds)'`).
+    settings docs - `'HTTP timeout read/write/connection/retry (in seconds)'`).
     A previous plan draft had ``* 1000`` (treating it as milliseconds);
     that was wrong and would have configured an 8.3-hour effective timeout.
     """
