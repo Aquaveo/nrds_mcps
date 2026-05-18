@@ -225,15 +225,17 @@ def test_duckdb_query_parquets_filename_is_basename(tmp_path) -> None:
     assert list(df["velocity"]) == [1.5, 2.5, 3.5, 4.5]
 
 
-def test_summarize_tool_result_omits_data_payload() -> None:
-    """Bug 1 regression: the result-summary helper must never include `data`.
+def test_summarize_tool_result_includes_aggregates_and_sample_row() -> None:
+    """Bug 1 regression: log summary must show enough to spot-check the
+    result without dumping the full `data` array.
 
     Observed 2026-05-18 against the deployed server: the multi-file tool's
     completion log line was ``LOGGER.info("...result: %s", result)`` which
     repr'd the full envelope including a 240-row ``data`` array — a
-    ~19 KB single-line log entry per call that buried the rest of the
-    server log. The fix replaced the dump with ``_summarize_tool_result``;
-    this test pins the contract.
+    ~19 KB single-line log entry per call. The first fix replaced that
+    with a too-sparse stats line; operators couldn't tell whether the
+    data looked right. The current contract is: aggregates (file_count,
+    rows, columns *by name*) + ONE sample row, all under ~500 chars.
     """
     from nextgen_mcp.utils import _summarize_tool_result
 
@@ -241,30 +243,61 @@ def test_summarize_tool_result_omits_data_payload() -> None:
         "ok": True,
         "file_count": 10,
         "rows": 240,
-        "columns": ["filename", "feature_id", "velocity"],
-        "data": [{"feature_id": i, "velocity": float(i)} for i in range(240)],
+        "columns": ["time", "flow"],
+        "data": [
+            {"time": "2026-05-18T02:00:00.000000Z", "flow": 18.58},
+            {"time": "2026-05-18T03:00:00.000000Z", "flow": 27.91},
+        ],
     }
     summary = _summarize_tool_result(success)
-    # Shape signals present.
+    # Aggregates.
     assert "ok=True" in summary
     assert "file_count=10" in summary
     assert "rows=240" in summary
-    assert "columns=3" in summary
-    # No data leakage.
-    assert "data" not in summary
-    assert "velocity" not in summary
-    # And it's a single-line, short string — log readability gate.
-    assert len(summary) < 200
+    # Column NAMES, not just count — operator can verify projection.
+    assert "columns=[time,flow]" in summary
+    # ONE sample row for spot-checking.
+    assert "sample_row=" in summary
+    assert "2026-05-18T02:00:00.000000Z" in summary
+    assert "18.58" in summary
+    # But NOT 240 rows.
+    assert "27.91" not in summary
+    # Single line, bounded length — log readability gate.
     assert "\n" not in summary
+    assert len(summary) < 500
+
+    # Wide columns get truncated with a count tail.
+    wide = {
+        "ok": True,
+        "file_count": 1,
+        "rows": 1,
+        "columns": [f"c{i}" for i in range(12)],
+        "data": [{f"c{i}": i for i in range(12)}],
+    }
+    wide_summary = _summarize_tool_result(wide)
+    assert "...+4" in wide_summary, (
+        f"wide column list should show a +N truncation tail; got {wide_summary!r}"
+    )
+
+
+def test_summarize_tool_result_error_envelope_surfaces_code_and_message() -> None:
+    """Error envelopes log code, message, and fix_hint preview — enough
+    to triage without re-running the call."""
+    from nextgen_mcp.utils import _summarize_tool_result
 
     error_envelope = {
         "ok": False,
-        "error": {"code": "not_found", "message": "No output files matched."},
-        "fix_hint": "Use list_available_output_files first.",
+        "error": {
+            "code": "not_found",
+            "message": "No output files matched the selector.",
+        },
+        "fix_hint": "Use list_available_output_files to confirm files exist first.",
     }
     err_summary = _summarize_tool_result(error_envelope)
     assert "ok=False" in err_summary
     assert "code=not_found" in err_summary
+    assert "message=No output files matched" in err_summary
+    assert "fix_hint_preview=" in err_summary
 
 
 def test_duckdb_query_parquets_substr_on_filename_yields_useful_date(tmp_path) -> None:

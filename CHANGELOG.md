@@ -42,12 +42,21 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `query_output_file_from_output_selector` and
   `query_output_files_from_output_selector` tool handlers no longer
   dump the entire result envelope (including the full `data` array) to
-  INFO logs after completion. They now log a one-line summary —
-  `ok=True file_count=N rows=N columns=N` or
-  `ok=False code=<code> fix_hint_preview=...`. The previous behavior
-  produced ~19 KB single-line log entries on a 10-file × 240-row query;
-  the new format stays under ~200 chars regardless of payload size. New
-  helper: `nextgen_mcp.utils._summarize_tool_result`.
+  INFO logs after completion. They now log a one-line summary with
+  aggregates *and a single sample row* — operators can spot-check that
+  the data looks right without the per-row dump. Success line shape:
+
+      ok=True file_count=10 rows=240 columns=[time,flow]
+      sample_row={'time': '2026-05-18T02:00:00.000000Z', 'flow': 18.58}
+
+  Error line shape:
+
+      ok=False code=not_found message=No output files matched. fix_hint_preview=...
+
+  The previous behavior produced ~19 KB single-line log entries on a
+  10-file × 240-row query; the new format is capped at ~500 chars
+  regardless of payload size. Wide column lists are truncated with a
+  `...+N` tail. New helper: `nextgen_mcp.utils._summarize_tool_result`.
 - **Validation envelope quality**: when a tool input fails a
   Pydantic constraint (`string_pattern_mismatch`, numeric bounds,
   length, enum), the envelope now surfaces the field's
