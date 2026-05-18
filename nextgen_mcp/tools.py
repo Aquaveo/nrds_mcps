@@ -583,7 +583,14 @@ def query_output_file_from_output_selector_tool(
         "Parquet only — use `query_output_file_from_output_selector` for single-file "
         "queries or for NetCDF outputs. "
         "The SQL must be a single read-only SELECT or WITH...SELECT and must read "
-        "FROM output. Add LIMIT or aggregate (COUNT, SUM, AVG) to bound response size."
+        "FROM output. "
+        "For data extraction (e.g. a feature's time series, a single VPU's flow), "
+        "use a WHERE clause to filter rows by feature_id, time range, or similar — "
+        "this bounds response size while preserving the full time series for the "
+        "subset of interest. Avoid LIMIT in extraction queries; LIMIT silently "
+        "drops rows from the tail and breaks ordered time series. Use LIMIT only "
+        "when exploring schema or sampling. Use aggregates (COUNT, SUM, AVG, MAX, "
+        "MIN) when the question is a summary statistic, not a row list."
     ),
 )
 def query_output_files_from_output_selector_tool(
@@ -611,13 +618,14 @@ def query_output_files_from_output_selector_tool(
         Field(
             description=(
                 "DuckDB SQL query against table `output` — the union of all parquet files in "
-                "the selector. Two provenance columns are added: `filename` (basename only, "
-                "e.g. `troute_output_202605180100.parquet`) and `source_path` (full S3 URL). "
-                "Single read-only SELECT or WITH...SELECT only. Must read FROM output."
+                "the selector. Two provenance columns are added: `filename` (basename only) "
+                "and `source_path` (full S3 URL). Single read-only SELECT or WITH...SELECT "
+                "only. Must read FROM output. For data extraction, prefer WHERE filtering "
+                "over LIMIT — LIMIT silently drops rows and breaks time series."
             ),
             pattern=r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b).*$",
         ),
-    ] = "SELECT filename, * FROM output LIMIT 10",
+    ] = "SELECT filename, COUNT(*) AS rows_per_file FROM output GROUP BY filename ORDER BY filename",
     ensemble: Annotated[
         Optional[str],
         Field(description="Optional ensemble member for medium_range.", pattern=r"^\d+$"),

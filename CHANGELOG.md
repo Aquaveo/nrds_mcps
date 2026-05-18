@@ -26,11 +26,16 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `not_found` envelope with `count` reflecting the unfiltered total so
     the LLM can redirect to the singular tool.
   - Default query: `SELECT filename, * FROM output LIMIT 10`. The
-    description recommends adding `LIMIT` or aggregating
-    (`COUNT`/`SUM`/`AVG`) to bound response size — DuckDB itself handles
-    the file scan easily within Cloud Run memory (operator-confirmed
-    ceiling: 10 parquet files × ~9 MB each per selector), but the LLM
-    context window is the real bottleneck on unbounded `SELECT *`.
+    description recommends WHERE-clause filtering (by feature_id, time
+    range, etc.) for data extraction and reserves LIMIT for schema
+    exploration / sampling only. Earlier iteration of this tool used
+    `SELECT filename, * FROM output LIMIT 10` as the default; the
+    `LIMIT 10` was anchoring downstream LLM calls — they copied it
+    into every retry even for time-series extraction where dropping
+    rows breaks the series. New default:
+    `SELECT filename, COUNT(*) AS rows_per_file FROM output GROUP BY filename ORDER BY filename`
+    — gives the LLM a useful first look at row counts without biasing
+    toward truncation.
 
 ### Changed
 
