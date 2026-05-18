@@ -454,6 +454,33 @@ def _duckdb_query_parquet(file_url: str, query: str) -> pd.DataFrame:
         except Exception:
             pass
 
+
+def _duckdb_query_parquets(file_urls: List[str], query: str) -> pd.DataFrame:
+    """Execute an arbitrary DuckDB query across multiple parquet files exposed as one temp view `output`.
+
+    Each result row carries a ``filename`` column identifying its source file
+    (DuckDB's native ``filename=true`` parameter on ``read_parquet``).
+    ``union_by_name=true`` lets the helper tolerate same-name-different-order
+    columns across files; type-incompatible same-named columns still surface
+    as a DuckDB error (which is a real schema bug worth raising).
+    """
+    safe_file_urls = [u.replace("'", "''") for u in file_urls]
+    quoted = ", ".join(f"'{u}'" for u in safe_file_urls)
+
+    con = duckdb_connect_with_httpfs()
+    try:
+        con.execute(
+            f"CREATE OR REPLACE TEMP VIEW output AS "
+            f"SELECT * FROM read_parquet([{quoted}], union_by_name=true, filename=true)"
+        )
+        return con.sql(query).df()
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
 def _duckdb_query_netcdf(df: pd.DataFrame , query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query against a netcdf file exposed as temp view `output`."""
     

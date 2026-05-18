@@ -30,6 +30,7 @@ from .logic import (
     get_output_file,
     query_output_file,
     query_output_file_from_output_selector,
+    query_output_files_from_output_selector,
     lookup_hydrofabric_feature as _lookup_hydrofabric_feature,
     get_hydrofabric_pmtiles_layers
 )
@@ -563,6 +564,111 @@ def query_output_file_from_output_selector_tool(
     )
     LOGGER.info(
         "query_output_file_from_output_selector result: %s",
+        result,
+    )
+    return result
+
+
+@mcp.tool(
+    name="query_output_files_from_output_selector",
+    description=(
+        "Run ONE read-only DuckDB SQL query across ALL parquet output files for a "
+        "selector (model/date/forecast/cycle/vpu, plus ensemble for medium_range) "
+        "as a single combined dataset. "
+        "Use this when the question spans the whole output bundle (aggregations, "
+        "ranking across files, max/min/avg) — the database does the merge in one "
+        "S3-streaming pass instead of one call per file. "
+        "Every result row carries a `filename` column identifying its source file. "
+        "Parquet only — use `query_output_file_from_output_selector` for single-file "
+        "queries or for NetCDF outputs. "
+        "The SQL must be a single read-only SELECT or WITH...SELECT and must read "
+        "FROM output. Add LIMIT or aggregate (COUNT, SUM, AVG) to bound response size."
+    ),
+)
+def query_output_files_from_output_selector_tool(
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
+    date: Annotated[
+        Optional[str],
+        Field(description="YYYY-MM-DD or YYYY/MM/DD", pattern=DATE_PATTERN),
+    ] = None,
+    forecast: Annotated[FORECASTS, Field(description="Forecast id - call list_available_forecasts to discover valid values")] = None,
+    cycle: Annotated[
+        str,
+        Field(
+            description="Cycle (00-23)",
+            pattern=r"^(?:[01]\d|2[0-3])$",
+        ),
+    ] = "00",
+    vpu: Annotated[
+        str,
+        Field(
+            description="VPU identifier - call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
+        ),
+    ] = None,
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "DuckDB SQL query against table `output` (the union of all parquet files in the selector, "
+                "with an added `filename` column). Single read-only SELECT or WITH...SELECT only. Must read FROM output."
+            ),
+            pattern=r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b).*$",
+        ),
+    ] = "SELECT filename, * FROM output LIMIT 10",
+    ensemble: Annotated[
+        Optional[str],
+        Field(description="Optional ensemble member for medium_range.", pattern=r"^\d+$"),
+    ] = None,
+) -> Dict[str, Any]:
+    err = _require(model=model, forecast=forecast, vpu=vpu)
+    if err:
+        return err
+    LOGGER.info(
+        "Tool query_output_files_from_output_selector called model=%s date=%s forecast=%s cycle=%s "
+        "vpu=%s ensemble=%s query_preview=%s",
+        model,
+        date,
+        _as_id(forecast),
+        cycle,
+        _as_id(vpu),
+        ensemble,
+        _preview_text(query),
+    )
+
+    end_date = _parse_date_or_today(date, "date")
+    params: Dict[str, Any] = {
+        "model": model,
+        "date": end_date.isoformat(),
+        "forecast": _as_id(forecast),
+        "cycle": cycle,
+        "vpu": _as_id(vpu),
+        "query": query,
+    }
+
+    if ensemble is not None:
+        params["ensemble"] = ensemble
+
+    result = query_output_files_from_output_selector(
+        model=params["model"],
+        date=params["date"],
+        forecast=params["forecast"],
+        cycle=params["cycle"],
+        vpu=params["vpu"],
+        query=params["query"],
+        ensemble=params.get("ensemble"),
+    )
+
+    LOGGER.info(
+        "Tool query_output_files_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s file_count=%s",
+        model,
+        end_date.isoformat(),
+        params["forecast"],
+        cycle,
+        params["vpu"],
+        result.get("file_count") if isinstance(result, dict) else None,
+    )
+    LOGGER.info(
+        "query_output_files_from_output_selector result: %s",
         result,
     )
     return result

@@ -562,6 +562,195 @@ def query_output_file_from_output_selector(
     return query_result
 
 
+def query_output_files_from_output_selector(
+    model,
+    date,
+    forecast,
+    cycle,
+    vpu,
+    query,
+    ensemble: Optional[str] = None,
+) -> Dict:
+    """Run a single DuckDB query across **all parquet** output files for a selector.
+
+    Mirrors :func:`query_output_file_from_output_selector` but skips the
+    "pick one file" branch. The resulting envelope swaps the singular
+    ``selected`` for plural ``files`` plus a ``file_count`` shortcut.
+
+    NetCDF outputs in the same directory are intentionally ignored — combining
+    netCDF files requires pandas concat and has no clean DuckDB primitive.
+    Callers needing single-file netCDF queries should use
+    :func:`query_output_file_from_output_selector`.
+    """
+    from .utils_rest import _duckdb_query_parquets
+
+    logger.info(
+        "Received request to query output files from selector with "
+        "model=%s date=%s forecast=%s cycle=%s vpu=%s ensemble=%s query=%s",
+        model,
+        date,
+        forecast,
+        cycle,
+        vpu,
+        ensemble,
+        query,
+    )
+
+    date_folder = _normalize_date_folder(date)
+    s3_dir = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}/{date_folder}/{forecast}/{cycle}"
+    if forecast == "medium_range":
+        ens = ensemble or "1"
+        s3_dir += f"/{ens}/{vpu}/{NGEN_RUN_PREFIX}"
+    else:
+        s3_dir += f"/{vpu}/{NGEN_RUN_PREFIX}"
+
+    try:
+        fs = s3_filesystem()
+        listing = fs.ls(s3_dir, detail=False)
+    except FileNotFoundError:
+        return _error_payload(
+            "not_found",
+            "No output files matched the selector.",
+            dir=s3_dir,
+            count=0,
+            files=[],
+            file_count=0,
+            query=query,
+        )
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error("IO error %s listing %s: %s", type(e).__name__, s3_dir, e)
+        return _error_payload(code, msg, fix_hint=fix_hint, dir=s3_dir, query=query)
+
+    listing_sorted = sorted(listing)
+    items_all = [
+        {"name": f.split("/")[-1], "path": _ensure_full_s3_url(f)}
+        for f in listing_sorted
+    ]
+    items = [it for it in items_all if it["name"].lower().endswith(".parquet")]
+
+    if not items:
+        return _error_payload(
+            "not_found",
+            "No parquet output files matched the selector.",
+            dir=s3_dir,
+            count=len(items_all),
+            files=[],
+            file_count=0,
+            query=query,
+        )
+
+    try:
+        query = validate_output_sql(query)
+    except ValueError as e:
+        logger.error("Invalid SQL query: %s", e)
+        return _error_payload(
+            "validation_error",
+            str(e),
+            dir=s3_dir,
+            files=items,
+            file_count=len(items),
+            query=query,
+        )
+
+    file_urls = [it["path"] for it in items]
+    logger.info(
+        "Querying %s parquet files in %s with: %s",
+        len(file_urls),
+        s3_dir,
+        query,
+    )
+
+    try:
+        df = _duckdb_query_parquets(file_urls, query)
+
+        if "time" in df.columns:
+            df["time"] = pd.to_datetime(df["time"], errors="coerce").dt.strftime(
+                "%Y-%m-%dT%H:%M:%S.%fZ"
+            )
+
+        logger.info(
+            "Query returned %s rows and columns: %s",
+            len(df),
+            df.columns.tolist(),
+        )
+        return _success_payload(
+            dir=s3_dir,
+            files=items,
+            file_count=len(items),
+            file_type="parquet",
+            query=query,
+            columns=list(df.columns),
+            rows=int(len(df)),
+            data=df.to_dict(orient="records"),
+        )
+
+    except (duckdb.BinderException, duckdb.ParserException, duckdb.CatalogException) as e:
+        # LLM-supplied SQL programmer error — recoverable. Surface the same
+        # structured envelope as the singular-file path so the LLM gets
+        # available_columns + fix_hint and can retry in one turn.
+        # _classify_llm_sql_error expects a representative file URL it can
+        # introspect for columns; use the first one.
+        code, msg, fix_hint, available_columns = _classify_llm_sql_error(
+            e, file_urls[0], query
+        )
+        logger.warning(
+            "LLM SQL error %s across %s parquet files in %s: %s",
+            type(e).__name__,
+            len(file_urls),
+            s3_dir,
+            e,
+        )
+        return _error_payload(
+            code,
+            msg,
+            fix_hint=fix_hint,
+            dir=s3_dir,
+            files=items,
+            file_count=len(items),
+            file_type="parquet",
+            query=query,
+            available_columns=available_columns,
+        )
+    except (OSError, ClientError, duckdb.Error) as e:
+        if _is_duckdb_programmer_error(e):
+            raise
+        code, msg, fix_hint = _classify_io_error(e)
+        logger.error(
+            "IO error %s querying %s parquet files in %s: %s",
+            type(e).__name__,
+            len(file_urls),
+            s3_dir,
+            e,
+        )
+        if code == "not_found":
+            return _error_payload(
+                code,
+                msg,
+                fix_hint=fix_hint,
+                dir=s3_dir,
+                files=items,
+                file_count=len(items),
+                file_type="parquet",
+                query=query,
+                columns=[],
+                rows=0,
+                data=[],
+            )
+        return _error_payload(
+            code,
+            msg,
+            fix_hint=fix_hint,
+            dir=s3_dir,
+            files=items,
+            file_count=len(items),
+            file_type="parquet",
+            query=query,
+        )
+
+
 def _bbox_from_row(row: Dict[str, Any]) -> Optional[List[float]]:
     """Compute a [minLon, minLat, maxLon, maxLat] bbox from a hydrofabric row.
 

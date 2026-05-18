@@ -7,6 +7,36 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- New MCP tool `query_output_files_from_output_selector` runs a single
+  read-only DuckDB query across **all parquet output files** for a
+  selector (model/date/forecast/cycle/vpu, plus `ensemble` for
+  `medium_range`) as a unified dataset. Each result row carries a
+  `filename` provenance column courtesy of DuckDB's native
+  `read_parquet([...], union_by_name=true, filename=true)`. Use this for
+  cross-file aggregations and ranking when the singular
+  `query_output_file_from_output_selector` would otherwise require N
+  separate calls.
+
+  - Parquet only — NetCDF outputs in the same directory are intentionally
+    ignored. Selectors that resolve to only `.nc` files return a
+    `not_found` envelope with `count` reflecting the unfiltered total so
+    the LLM can redirect to the singular tool.
+  - Default query: `SELECT filename, * FROM output LIMIT 10`. The
+    description recommends adding `LIMIT` or aggregating
+    (`COUNT`/`SUM`/`AVG`) to bound response size — DuckDB itself handles
+    the file scan easily within Cloud Run memory (operator-confirmed
+    ceiling: 10 parquet files × ~9 MB each per selector), but the LLM
+    context window is the real bottleneck on unbounded `SELECT *`.
+
+### Changed
+
+- `EXPECTED_MIN_TOOLS` in `release.yml` bumped 10 → 11.
+- `REQUIRED` smoke list in `release.yml` adds
+  `query_output_files_from_output_selector` so a regression that drops
+  the registration fails the deploy gate.
+
 ## [0.4.0] - 2026-05-16
 
 ### Removed (BREAKING - tool surface)

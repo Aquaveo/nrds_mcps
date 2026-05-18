@@ -203,7 +203,7 @@ jobs:
           URL: ${{ steps.deploy.outputs.url }}
           # Defensive lower bound; the load-bearing assertions below are
           # the explicit name-absence and name-presence checks.
-          EXPECTED_MIN_TOOLS: '10'
+          EXPECTED_MIN_TOOLS: '11'
         run: |
           set -euo pipefail
           python <<'PY'
@@ -225,9 +225,10 @@ jobs:
           )
 
           # Names that must exist (renamed-and-reshaped surface from
-          # the data-only cleanup in v0.2.0).
+          # the data-only cleanup in v0.2.0, plus multi-file query in v0.4.1).
           REQUIRED = (
               "lookup_hydrofabric_feature",
+              "query_output_files_from_output_selector",
           )
 
           # Prompts (slash-command templates) that must exist on the
