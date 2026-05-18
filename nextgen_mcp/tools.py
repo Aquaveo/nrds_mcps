@@ -14,6 +14,7 @@ from .utils import (
     _parse_date_or_today,
     _validate_date_bounds,
     _preview_text,
+    _summarize_tool_result,
 )
 from .validation import (
     DATE_PATTERN,
@@ -555,16 +556,13 @@ def query_output_file_from_output_selector_tool(
     )
 
     LOGGER.info(
-        "Tool query_output_file_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s",
+        "Tool query_output_file_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s result=%s",
         model,
         end_date.isoformat(),
         params["forecast"],
         cycle,
         params["vpu"],
-    )
-    LOGGER.info(
-        "query_output_file_from_output_selector result: %s",
-        result,
+        _summarize_tool_result(result),
     )
     return result
 
@@ -664,17 +662,13 @@ def query_output_files_from_output_selector_tool(
     )
 
     LOGGER.info(
-        "Tool query_output_files_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s file_count=%s",
+        "Tool query_output_files_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s result=%s",
         model,
         end_date.isoformat(),
         params["forecast"],
         cycle,
         params["vpu"],
-        result.get("file_count") if isinstance(result, dict) else None,
-    )
-    LOGGER.info(
-        "query_output_files_from_output_selector result: %s",
-        result,
+        _summarize_tool_result(result),
     )
     return result
 

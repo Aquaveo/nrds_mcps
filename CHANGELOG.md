@@ -38,6 +38,28 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `REQUIRED` smoke list in `release.yml` adds
   `query_output_files_from_output_selector` so a regression that drops
   the registration fails the deploy gate.
+- **Server log readability**: the
+  `query_output_file_from_output_selector` and
+  `query_output_files_from_output_selector` tool handlers no longer
+  dump the entire result envelope (including the full `data` array) to
+  INFO logs after completion. They now log a one-line summary —
+  `ok=True file_count=N rows=N columns=N` or
+  `ok=False code=<code> fix_hint_preview=...`. The previous behavior
+  produced ~19 KB single-line log entries on a 10-file × 240-row query;
+  the new format stays under ~200 chars regardless of payload size. New
+  helper: `nextgen_mcp.utils._summarize_tool_result`.
+- **Validation envelope quality**: when a tool input fails a
+  Pydantic constraint (`string_pattern_mismatch`, numeric bounds,
+  length, enum), the envelope now surfaces the field's
+  `Field(description=...)` text alongside the constraint. For example,
+  `date='ngen.20250929'` previously produced
+  `fix_hint: "date must match pattern '^(?:\\d{4}-\\d{2}-\\d{2}|...)$'"`
+  which the LLM had to mentally parse the regex to recover from. The
+  new envelope reads
+  `fix_hint: "date (YYYY-MM-DD or YYYY/MM/DD) must match pattern '...'"`
+  and the `details[].description` field carries the same text for
+  structured-data consumers. Shortens recovery to one round trip when
+  the LLM mis-formats a regex-constrained kwarg.
 
 ## [0.4.0] - 2026-05-16
 

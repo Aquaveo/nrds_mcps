@@ -109,7 +109,9 @@ class InputValidationEnvelopeMiddleware(Middleware):
         except ValidationError as exc:
             tool_name = getattr(context.message, "name", "<unknown>")
             unexpected_kwargs, missing_kwargs, other_errors = _classify_errors(exc)
-            expected_kwargs = await _expected_kwargs_for_tool(context, tool_name)
+            expected_kwargs, field_descriptions = await _schema_for_tool(
+                context, tool_name
+            )
 
             envelope: dict[str, Any] = {
                 "error": _build_error_message(
@@ -121,11 +123,17 @@ class InputValidationEnvelopeMiddleware(Middleware):
             if missing_kwargs:
                 envelope["missing_kwargs"] = missing_kwargs
             if other_errors:
-                envelope["details"] = _summarize_errors(other_errors)
+                envelope["details"] = _summarize_errors(
+                    other_errors, field_descriptions
+                )
             if expected_kwargs:
                 envelope["expected_kwargs"] = expected_kwargs
             envelope["fix_hint"] = _build_fix_hint(
-                unexpected_kwargs, missing_kwargs, other_errors, expected_kwargs
+                unexpected_kwargs,
+                missing_kwargs,
+                other_errors,
+                expected_kwargs,
+                field_descriptions,
             )
 
             LOGGER.warning(
@@ -166,32 +174,43 @@ class InputValidationEnvelopeMiddleware(Middleware):
             return ToolResult(structured_content=envelope)
 
 
-async def _expected_kwargs_for_tool(
+async def _schema_for_tool(
     context: MiddlewareContext[Any], tool_name: str
-) -> list[str]:
-    """Return the sorted list of property names from the tool's input schema.
+) -> tuple[list[str], dict[str, str]]:
+    """Return (sorted expected_kwargs, {field: description}) from the input schema.
 
-    Falls back to ``[]`` if the FastMCP context, registry lookup, or schema
-    is unavailable / malformed - the envelope is still informative without
-    `expected_kwargs`, just less helpful.
+    `field_descriptions` carries the natural-language description from each
+    Pydantic ``Field(description=...)``. ``_describe_other_errors`` surfaces
+    it alongside the constraint phrase so the LLM sees e.g.
+    ``"date (YYYY-MM-DD or YYYY/MM/DD) must match pattern '...'"`` instead
+    of having to mentally parse the regex.
+
+    Falls back to ``([], {})`` if the FastMCP context, registry lookup, or
+    schema is unavailable / malformed - the envelope is still informative
+    without the schema, just less helpful.
     """
     fastmcp_ctx = getattr(context, "fastmcp_context", None)
     if fastmcp_ctx is None:
-        return []
+        return [], {}
     try:
         fastmcp = fastmcp_ctx.fastmcp
     except RuntimeError:
         # Context dereference race - server is shutting down or detached.
-        return []
+        return [], {}
     try:
         tool = await fastmcp.get_tool(tool_name)
     except Exception:  # pragma: no cover - defensive
-        return []
+        return [], {}
     if tool is None:
-        return []
+        return [], {}
     params = getattr(tool, "parameters", None) or {}
     properties = params.get("properties") or {}
-    return sorted(properties.keys())
+    descriptions = {
+        name: spec["description"]
+        for name, spec in properties.items()
+        if isinstance(spec, dict) and isinstance(spec.get("description"), str)
+    }
+    return sorted(properties.keys()), descriptions
 
 
 def _classify_errors(
@@ -249,6 +268,7 @@ def _build_fix_hint(
     missing: list[str],
     others: list[dict[str, Any]],
     expected: list[str],
+    field_descriptions: dict[str, str] | None = None,
 ) -> str:
     """Tailored natural-language recovery instruction.
 
@@ -256,8 +276,9 @@ def _build_fix_hint(
     to re-derive them from the bucket lists. Lists `expected_kwargs`
     last as the canonical reference. For type-specific errors with
     actionable context (regex pattern, numeric bounds), names the
-    field AND the constraint so the LLM has the info needed to satisfy
-    the validator on retry.
+    field, its Pydantic ``Field(description=...)`` if present, AND the
+    constraint — so the LLM gets a natural-language hint
+    (``date (YYYY-MM-DD or YYYY/MM/DD)``) alongside the regex.
     """
     bits: list[str] = []
     if unexpected:
@@ -268,7 +289,7 @@ def _build_fix_hint(
         # Build a per-field constraint description from the pydantic error
         # type + carried-through ctx. Falls back to a generic hint when
         # the type isn't one we know how to phrase.
-        per_field_hints = _describe_other_errors(others)
+        per_field_hints = _describe_other_errors(others, field_descriptions or {})
         if per_field_hints:
             bits.append(per_field_hints)
         else:
@@ -283,25 +304,37 @@ def _build_fix_hint(
     return " ".join(bits)
 
 
-def _describe_other_errors(others: list[dict[str, Any]]) -> str:
+def _describe_other_errors(
+    others: list[dict[str, Any]],
+    field_descriptions: dict[str, str] | None = None,
+) -> str:
     """Build a per-field natural-language constraint description.
 
     Reads pydantic error dicts (post-`_summarize_errors`-equivalent shape,
     or raw - both supported) and produces a single phrase per field naming
-    the field AND the constraint it failed. Returns "" when none of the
-    error types have a known phrasing, so the caller can fall back to the
-    generic hint.
+    the field, its schema description (if available), AND the constraint
+    it failed. Returns "" when none of the error types have a known
+    phrasing, so the caller can fall back to the generic hint.
 
-    Each phrase is shaped to be directly actionable by an LLM on retry:
-    "<field> must match pattern '<regex>'" beats "field <field> failed
-    string_pattern_mismatch".
+    The schema description carries the human-authored natural-language
+    hint from ``Field(description=...)`` (e.g. ``"YYYY-MM-DD or YYYY/MM/DD"``
+    for a date-pattern field). Surfacing it inline lets the LLM see the
+    intended format directly, instead of having to mentally parse the
+    regex pattern.
     """
+    descriptions = field_descriptions or {}
     bits: list[str] = []
     for err in others:
         loc = err.get("loc") or ()
         field = err.get("field") or (
             ".".join(str(p) for p in loc) if loc else "<value>"
         )
+        # Render the field with its schema description in parens when present.
+        # `field` here is the deepest schema path component; descriptions are
+        # keyed by top-level kwarg name. For nested errors the lookup misses
+        # and we degrade gracefully to bare field name.
+        desc = descriptions.get(str(field))
+        field_phrase = f"{field} ({desc})" if desc else field
         err_type = err.get("type")
         # Merge raw ctx (raw pydantic error path) with the entry's top-level
         # keys (post-_summarize_errors path). Top-level wins on collision -
@@ -311,18 +344,18 @@ def _describe_other_errors(others: list[dict[str, Any]]) -> str:
         if err_type == "string_pattern_mismatch":
             pattern = merged.get("pattern")
             if pattern:
-                bits.append(f"{field} must match pattern {pattern!r}.")
+                bits.append(f"{field_phrase} must match pattern {pattern!r}.")
         elif err_type == "string_too_short":
             min_length = merged.get("min_length")
             if min_length is not None:
                 bits.append(
-                    f"{field} must be at least {min_length} character(s) long."
+                    f"{field_phrase} must be at least {min_length} character(s) long."
                 )
         elif err_type == "string_too_long":
             max_length = merged.get("max_length")
             if max_length is not None:
                 bits.append(
-                    f"{field} must be at most {max_length} character(s) long."
+                    f"{field_phrase} must be at most {max_length} character(s) long."
                 )
         elif err_type in ("greater_than_equal", "greater_than"):
             bound = (
@@ -331,7 +364,7 @@ def _describe_other_errors(others: list[dict[str, Any]]) -> str:
             )
             op = ">=" if err_type == "greater_than_equal" else ">"
             if bound is not None:
-                bits.append(f"{field} must be {op} {bound}.")
+                bits.append(f"{field_phrase} must be {op} {bound}.")
         elif err_type in ("less_than_equal", "less_than"):
             bound = (
                 merged.get("le") if err_type == "less_than_equal"
@@ -339,30 +372,44 @@ def _describe_other_errors(others: list[dict[str, Any]]) -> str:
             )
             op = "<=" if err_type == "less_than_equal" else "<"
             if bound is not None:
-                bits.append(f"{field} must be {op} {bound}.")
+                bits.append(f"{field_phrase} must be {op} {bound}.")
         elif err_type in ("literal_error", "enum"):
             expected = merged.get("expected")
             if expected is not None:
-                bits.append(f"{field} must be one of: {expected}.")
+                bits.append(f"{field_phrase} must be one of: {expected}.")
 
     return " ".join(bits)
 
 
-def _summarize_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _summarize_errors(
+    errors: list[dict[str, Any]],
+    field_descriptions: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     """Strip pydantic error dicts to a stable, value-free summary.
+
     Names + types + actionable context (regex pattern, numeric bounds);
     no user-supplied values. Carries forward the parts of pydantic's
     ``ctx`` that tell the LLM what to satisfy (e.g. the actual regex
     pattern on string_pattern_mismatch) without leaking the bad input.
+
+    When the field's schema carries a Pydantic ``Field(description=...)``,
+    that natural-language hint is attached as ``description`` so the LLM
+    can read it directly from the ``details`` array without depending on
+    the ``fix_hint`` prose path.
     """
+    descriptions = field_descriptions or {}
     summary: list[dict[str, Any]] = []
     for err in errors:
         loc = err.get("loc") or ()
         err_type = err.get("type")
+        field_name = ".".join(str(p) for p in loc) if loc else None
         entry: dict[str, Any] = {
-            "field": ".".join(str(p) for p in loc) if loc else None,
+            "field": field_name,
             "type": err_type,
         }
+        desc = descriptions.get(field_name) if field_name else None
+        if desc:
+            entry["description"] = desc
         ctx = err.get("ctx") or {}
         allowed_keys = _CTX_KEY_ALLOWLIST.get(err_type or "", ())
         for key in allowed_keys:

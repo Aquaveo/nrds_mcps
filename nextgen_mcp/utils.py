@@ -120,6 +120,45 @@ def _preview_text(value: Optional[str], limit: int = 200) -> Optional[str]:
     return text if len(text) <= limit else f"{text[:limit]}..."
 
 
+def _summarize_tool_result(result) -> str:
+    """One-line log summary for a tool result envelope.
+
+    Reports shape, not contents — never includes `data` rows. Use this in
+    place of ``LOGGER.info("...result: %s", result)`` for any tool whose
+    `data` payload can grow unbounded (per-row dumps overwhelm server logs
+    and bury actionable signal). Returns a string like:
+
+        ok=True file_count=10 rows=240 columns=2
+        ok=False code=not_found
+        ok=False code=invalid_query fix_hint_preview=...
+
+    Tolerates non-dict and missing-field results so the log call never
+    raises and never partially-suppresses a tool result the caller still
+    needs to return upstream.
+    """
+    if not isinstance(result, dict):
+        return f"non_dict_result type={type(result).__name__}"
+
+    if result.get("ok") is False:
+        err = result.get("error") or {}
+        code = err.get("code") if isinstance(err, dict) else None
+        bits = [f"ok=False code={code or 'unknown'}"]
+        fix_hint = result.get("fix_hint")
+        if fix_hint:
+            bits.append(f"fix_hint_preview={_preview_text(str(fix_hint), 80)}")
+        return " ".join(bits)
+
+    bits = ["ok=True"]
+    if "file_count" in result:
+        bits.append(f"file_count={result['file_count']}")
+    if "rows" in result:
+        bits.append(f"rows={result['rows']}")
+    columns = result.get("columns")
+    if isinstance(columns, list):
+        bits.append(f"columns={len(columns)}")
+    return " ".join(bits)
+
+
 def _validate_date_bounds(d, field_name: str):
     today = datetime.now(DEFAULT_TZ).date()
     LOGGER.debug(

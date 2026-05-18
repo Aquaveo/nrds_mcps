@@ -225,6 +225,48 @@ def test_duckdb_query_parquets_filename_is_basename(tmp_path) -> None:
     assert list(df["velocity"]) == [1.5, 2.5, 3.5, 4.5]
 
 
+def test_summarize_tool_result_omits_data_payload() -> None:
+    """Bug 1 regression: the result-summary helper must never include `data`.
+
+    Observed 2026-05-18 against the deployed server: the multi-file tool's
+    completion log line was ``LOGGER.info("...result: %s", result)`` which
+    repr'd the full envelope including a 240-row ``data`` array — a
+    ~19 KB single-line log entry per call that buried the rest of the
+    server log. The fix replaced the dump with ``_summarize_tool_result``;
+    this test pins the contract.
+    """
+    from nextgen_mcp.utils import _summarize_tool_result
+
+    success = {
+        "ok": True,
+        "file_count": 10,
+        "rows": 240,
+        "columns": ["filename", "feature_id", "velocity"],
+        "data": [{"feature_id": i, "velocity": float(i)} for i in range(240)],
+    }
+    summary = _summarize_tool_result(success)
+    # Shape signals present.
+    assert "ok=True" in summary
+    assert "file_count=10" in summary
+    assert "rows=240" in summary
+    assert "columns=3" in summary
+    # No data leakage.
+    assert "data" not in summary
+    assert "velocity" not in summary
+    # And it's a single-line, short string — log readability gate.
+    assert len(summary) < 200
+    assert "\n" not in summary
+
+    error_envelope = {
+        "ok": False,
+        "error": {"code": "not_found", "message": "No output files matched."},
+        "fix_hint": "Use list_available_output_files first.",
+    }
+    err_summary = _summarize_tool_result(error_envelope)
+    assert "ok=False" in err_summary
+    assert "code=not_found" in err_summary
+
+
 def test_duckdb_query_parquets_substr_on_filename_yields_useful_date(tmp_path) -> None:
     """Integration: substr on the basename gives the LLM-extractable date.
 
