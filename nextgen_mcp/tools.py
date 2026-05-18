@@ -578,7 +578,10 @@ def query_output_file_from_output_selector_tool(
         "Use this when the question spans the whole output bundle (aggregations, "
         "ranking across files, max/min/avg) — the database does the merge in one "
         "S3-streaming pass instead of one call per file. "
-        "Every result row carries a `filename` column identifying its source file. "
+        "Every result row carries two provenance columns: `filename` is the file "
+        "basename only (no path or s3:// prefix), and `source_path` is the full "
+        "S3 URL. Use `filename` when extracting time portions or labels from the "
+        "name; use `source_path` when full provenance is needed. "
         "Parquet only — use `query_output_file_from_output_selector` for single-file "
         "queries or for NetCDF outputs. "
         "The SQL must be a single read-only SELECT or WITH...SELECT and must read "
@@ -609,8 +612,10 @@ def query_output_files_from_output_selector_tool(
         str,
         Field(
             description=(
-                "DuckDB SQL query against table `output` (the union of all parquet files in the selector, "
-                "with an added `filename` column). Single read-only SELECT or WITH...SELECT only. Must read FROM output."
+                "DuckDB SQL query against table `output` — the union of all parquet files in "
+                "the selector. Two provenance columns are added: `filename` (basename only, "
+                "e.g. `troute_output_202605180100.parquet`) and `source_path` (full S3 URL). "
+                "Single read-only SELECT or WITH...SELECT only. Must read FROM output."
             ),
             pattern=r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b).*$",
         ),

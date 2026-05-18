@@ -178,3 +178,70 @@ def test_query_output_files_binder_exception_returns_envelope(monkeypatch: pytes
     # File listing still surfaced in the envelope so the LLM has context.
     assert result["file_count"] == 2
     assert len(result["files"]) == 2
+
+
+def test_duckdb_query_parquets_filename_is_basename(tmp_path) -> None:
+    """Integration: filename column exposed to SQL is basename-only.
+
+    Live DuckDB call against two local parquet fixtures. Verifies:
+    - filename column contains just the basename (no s3:// prefix, no path)
+    - source_path column contains the full URL passed to read_parquet
+    - parquet columns are still selectable alongside the provenance columns
+
+    This is the test that would have caught the bug seen in production where
+    `filename` was the full S3 URL and the LLM's `substr(filename, 15, 12)`
+    returned 'munity-ngen-' instead of the date portion of the basename.
+    """
+    from nextgen_mcp.utils_rest import _duckdb_query_parquets
+
+    fixture_a = tmp_path / "troute_output_202605180100.parquet"
+    fixture_b = tmp_path / "troute_output_202605190100.parquet"
+    pd.DataFrame({"feature_id": [1, 2], "velocity": [1.5, 2.5]}).to_parquet(fixture_a)
+    pd.DataFrame({"feature_id": [3, 4], "velocity": [3.5, 4.5]}).to_parquet(fixture_b)
+
+    # Local file URLs — DuckDB's read_parquet handles file:// paths the same
+    # way it handles s3://, and the basename regex is path-style-agnostic.
+    urls = [str(fixture_a), str(fixture_b)]
+
+    df = _duckdb_query_parquets(
+        urls,
+        "SELECT filename, source_path, feature_id, velocity FROM output ORDER BY feature_id",
+    )
+
+    # filename: basename only, no slashes
+    assert list(df["filename"]) == [
+        "troute_output_202605180100.parquet",
+        "troute_output_202605180100.parquet",
+        "troute_output_202605190100.parquet",
+        "troute_output_202605190100.parquet",
+    ]
+    assert all("/" not in name for name in df["filename"])
+
+    # source_path: full path, with slashes
+    assert all(str(fixture_a) == p or str(fixture_b) == p for p in df["source_path"])
+
+    # Parquet columns survive the projection
+    assert list(df["feature_id"]) == [1, 2, 3, 4]
+    assert list(df["velocity"]) == [1.5, 2.5, 3.5, 4.5]
+
+
+def test_duckdb_query_parquets_substr_on_filename_yields_useful_date(tmp_path) -> None:
+    """Integration: substr on the basename gives the LLM-extractable date.
+
+    Pins the specific user-facing scenario: the LLM tries to extract a date
+    from the filename, e.g. `substr(filename, 15, 12)` against
+    `troute_output_202605180100.parquet`. With basename-only filename, this
+    yields `202605180100` (the timestamp), not garbage.
+    """
+    from nextgen_mcp.utils_rest import _duckdb_query_parquets
+
+    fixture = tmp_path / "troute_output_202605180100.parquet"
+    pd.DataFrame({"feature_id": [1], "velocity": [1.5]}).to_parquet(fixture)
+
+    df = _duckdb_query_parquets(
+        [str(fixture)],
+        "SELECT substr(filename, 15, 12) AS event_time FROM output",
+    )
+
+    # 'troute_output_202605180100.parquet'[14:26] (1-indexed in SQL) = '202605180100'
+    assert df["event_time"].iloc[0] == "202605180100"

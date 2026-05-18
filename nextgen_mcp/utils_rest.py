@@ -458,11 +458,18 @@ def _duckdb_query_parquet(file_url: str, query: str) -> pd.DataFrame:
 def _duckdb_query_parquets(file_urls: List[str], query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query across multiple parquet files exposed as one temp view `output`.
 
-    Each result row carries a ``filename`` column identifying its source file
-    (DuckDB's native ``filename=true`` parameter on ``read_parquet``).
-    ``union_by_name=true`` lets the helper tolerate same-name-different-order
-    columns across files; type-incompatible same-named columns still surface
-    as a DuckDB error (which is a real schema bug worth raising).
+    The view exposes two provenance columns alongside the parquet data:
+
+    - ``filename`` — **basename only** (e.g. ``troute_output_202605180100.parquet``).
+      Computed as ``regexp_replace(filename, '^.*/', '')`` so LLM SQL can
+      ``substr``/``regexp_extract`` time portions out of the filename without
+      tripping over the S3 URL prefix.
+    - ``source_path`` — full S3 URL of the source file. Use for unambiguous
+      row → URL provenance when basename alone is ambiguous.
+
+    ``union_by_name=true`` tolerates same-name columns appearing in different
+    orders across files; type-incompatible same-named columns still surface
+    as a DuckDB error (a real schema bug worth raising).
     """
     safe_file_urls = [u.replace("'", "''") for u in file_urls]
     quoted = ", ".join(f"'{u}'" for u in safe_file_urls)
@@ -471,7 +478,11 @@ def _duckdb_query_parquets(file_urls: List[str], query: str) -> pd.DataFrame:
     try:
         con.execute(
             f"CREATE OR REPLACE TEMP VIEW output AS "
-            f"SELECT * FROM read_parquet([{quoted}], union_by_name=true, filename=true)"
+            f"SELECT "
+            f"  regexp_replace(filename, '^.*/', '') AS filename, "
+            f"  filename AS source_path, "
+            f"  * EXCLUDE (filename) "
+            f"FROM read_parquet([{quoted}], union_by_name=true, filename=true)"
         )
         return con.sql(query).df()
     finally:

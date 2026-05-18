@@ -12,12 +12,14 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - New MCP tool `query_output_files_from_output_selector` runs a single
   read-only DuckDB query across **all parquet output files** for a
   selector (model/date/forecast/cycle/vpu, plus `ensemble` for
-  `medium_range`) as a unified dataset. Each result row carries a
-  `filename` provenance column courtesy of DuckDB's native
-  `read_parquet([...], union_by_name=true, filename=true)`. Use this for
-  cross-file aggregations and ranking when the singular
-  `query_output_file_from_output_selector` would otherwise require N
-  separate calls.
+  `medium_range`) as a unified dataset. Each result row carries two
+  provenance columns: `filename` (basename only — e.g.
+  `troute_output_202605180100.parquet`) and `source_path` (full S3 URL).
+  The basename split lets LLM SQL extract time portions or labels via
+  `substr` / `regexp_extract` without tripping over the `s3://...`
+  prefix. Use this for cross-file aggregations and ranking when the
+  singular `query_output_file_from_output_selector` would otherwise
+  require N separate calls.
 
   - Parquet only — NetCDF outputs in the same directory are intentionally
     ignored. Selectors that resolve to only `.nc` files return a
