@@ -454,6 +454,44 @@ def _duckdb_query_parquet(file_url: str, query: str) -> pd.DataFrame:
         except Exception:
             pass
 
+
+def _duckdb_query_parquets(file_urls: List[str], query: str) -> pd.DataFrame:
+    """Execute an arbitrary DuckDB query across multiple parquet files exposed as one temp view `output`.
+
+    The view exposes two provenance columns alongside the parquet data:
+
+    - ``filename`` — **basename only** (e.g. ``troute_output_202605180100.parquet``).
+      Computed as ``regexp_replace(filename, '^.*/', '')`` so LLM SQL can
+      ``substr``/``regexp_extract`` time portions out of the filename without
+      tripping over the S3 URL prefix.
+    - ``source_path`` — full S3 URL of the source file. Use for unambiguous
+      row → URL provenance when basename alone is ambiguous.
+
+    ``union_by_name=true`` tolerates same-name columns appearing in different
+    orders across files; type-incompatible same-named columns still surface
+    as a DuckDB error (a real schema bug worth raising).
+    """
+    safe_file_urls = [u.replace("'", "''") for u in file_urls]
+    quoted = ", ".join(f"'{u}'" for u in safe_file_urls)
+
+    con = duckdb_connect_with_httpfs()
+    try:
+        con.execute(
+            f"CREATE OR REPLACE TEMP VIEW output AS "
+            f"SELECT "
+            f"  regexp_replace(filename, '^.*/', '') AS filename, "
+            f"  filename AS source_path, "
+            f"  * EXCLUDE (filename) "
+            f"FROM read_parquet([{quoted}], union_by_name=true, filename=true)"
+        )
+        return con.sql(query).df()
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
 def _duckdb_query_netcdf(df: pd.DataFrame , query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query against a netcdf file exposed as temp view `output`."""
     

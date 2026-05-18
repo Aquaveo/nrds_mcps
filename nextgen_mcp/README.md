@@ -72,13 +72,14 @@ when no credentials are present.
 ## Tools
 
 The MCP tool surface is discovered automatically by clients via `tools/list`.
-The current 10 tools cover:
+The current 11 tools cover:
 
 - Discovery: `list_available_models`, `list_available_dates`,
   `list_available_forecasts`, `list_available_cycles`, `list_available_vpus`,
   `list_available_output_files`
 - Resolution: `resolve_output_file`
-- Query: `query_output_file`, `query_output_file_from_output_selector`
+- Query: `query_output_file`, `query_output_file_from_output_selector`,
+  `query_output_files_from_output_selector`
 - Hydrofabric: `lookup_hydrofabric_feature`
 
 All tools return data only - no Plotly figure JSON or map config blobs.

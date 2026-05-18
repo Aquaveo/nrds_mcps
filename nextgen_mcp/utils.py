@@ -120,6 +120,68 @@ def _preview_text(value: Optional[str], limit: int = 200) -> Optional[str]:
     return text if len(text) <= limit else f"{text[:limit]}..."
 
 
+def _summarize_tool_result(result) -> str:
+    """One-line log summary for a tool result envelope.
+
+    Reports shape and a small bounded sample — never dumps the full
+    `data` payload. Use this in place of
+    ``LOGGER.info("...result: %s", result)`` for any tool whose `data`
+    can grow unbounded (per-row dumps overwhelm server logs and bury
+    actionable signal). Output is single-line and capped at ~500 chars
+    regardless of payload size.
+
+    Success example::
+
+        ok=True file_count=10 rows=240 columns=[time,flow] sample_row={'time': '2026-05-18T02:00:00.000000Z', 'flow': 18.58}
+
+    Error example::
+
+        ok=False code=not_found message=No output files matched. fix_hint_preview=...
+
+    Tolerates non-dict and missing-field results so the log call never
+    raises and never partially-suppresses a tool result the caller still
+    needs to return upstream.
+    """
+    if not isinstance(result, dict):
+        return f"non_dict_result type={type(result).__name__}"
+
+    if result.get("ok") is False:
+        err = result.get("error") or {}
+        code = message = None
+        if isinstance(err, dict):
+            code = err.get("code")
+            message = err.get("message")
+        bits = [f"ok=False code={code or 'unknown'}"]
+        if message:
+            bits.append(f"message={_preview_text(str(message), 120)}")
+        fix_hint = result.get("fix_hint")
+        if fix_hint:
+            bits.append(f"fix_hint_preview={_preview_text(str(fix_hint), 120)}")
+        return " ".join(bits)
+
+    bits = ["ok=True"]
+    if "file_count" in result:
+        bits.append(f"file_count={result['file_count']}")
+    if "rows" in result:
+        bits.append(f"rows={result['rows']}")
+    columns = result.get("columns")
+    if isinstance(columns, list):
+        # Surface the actual column names (truncated) so the operator
+        # can verify the projection without the data array.
+        col_list = ",".join(str(c) for c in columns[:8])
+        if len(columns) > 8:
+            col_list += f",...+{len(columns) - 8}"
+        bits.append(f"columns=[{col_list}]")
+    # A single sample row from `data` lets the operator spot-check that
+    # the values look right. Truncate to a bounded length so wide rows
+    # never blow up the log line.
+    data = result.get("data")
+    if isinstance(data, list) and data:
+        first = data[0]
+        bits.append(f"sample_row={_preview_text(str(first), 240)}")
+    return " ".join(bits)
+
+
 def _validate_date_bounds(d, field_name: str):
     today = datetime.now(DEFAULT_TZ).date()
     LOGGER.debug(

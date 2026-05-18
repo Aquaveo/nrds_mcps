@@ -14,6 +14,7 @@ from .utils import (
     _parse_date_or_today,
     _validate_date_bounds,
     _preview_text,
+    _summarize_tool_result,
 )
 from .validation import (
     DATE_PATTERN,
@@ -30,6 +31,7 @@ from .logic import (
     get_output_file,
     query_output_file,
     query_output_file_from_output_selector,
+    query_output_files_from_output_selector,
     lookup_hydrofabric_feature as _lookup_hydrofabric_feature,
     get_hydrofabric_pmtiles_layers
 )
@@ -554,16 +556,127 @@ def query_output_file_from_output_selector_tool(
     )
 
     LOGGER.info(
-        "Tool query_output_file_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s",
+        "Tool query_output_file_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s result=%s",
         model,
         end_date.isoformat(),
         params["forecast"],
         cycle,
         params["vpu"],
+        _summarize_tool_result(result),
     )
+    return result
+
+
+@mcp.tool(
+    name="query_output_files_from_output_selector",
+    description=(
+        "Run ONE read-only DuckDB SQL query across ALL parquet output files for a "
+        "selector (model/date/forecast/cycle/vpu, plus ensemble for medium_range) "
+        "as a single combined dataset. "
+        "Use this when the question spans the whole output bundle (aggregations, "
+        "ranking across files, max/min/avg) — the database does the merge in one "
+        "S3-streaming pass instead of one call per file. "
+        "Every result row carries two provenance columns: `filename` is the file "
+        "basename only (no path or s3:// prefix), and `source_path` is the full "
+        "S3 URL. Use `filename` when extracting time portions or labels from the "
+        "name; use `source_path` when full provenance is needed. "
+        "Parquet only — use `query_output_file_from_output_selector` for single-file "
+        "queries or for NetCDF outputs. "
+        "The SQL must be a single read-only SELECT or WITH...SELECT and must read "
+        "FROM output. "
+        "For data extraction (e.g. a feature's time series, a single VPU's flow), "
+        "use a WHERE clause to filter rows by feature_id, time range, or similar — "
+        "this bounds response size while preserving the full time series for the "
+        "subset of interest. Avoid LIMIT in extraction queries; LIMIT silently "
+        "drops rows from the tail and breaks ordered time series. Use LIMIT only "
+        "when exploring schema or sampling. Use aggregates (COUNT, SUM, AVG, MAX, "
+        "MIN) when the question is a summary statistic, not a row list."
+    ),
+)
+def query_output_files_from_output_selector_tool(
+    model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
+    date: Annotated[
+        Optional[str],
+        Field(description="YYYY-MM-DD or YYYY/MM/DD", pattern=DATE_PATTERN),
+    ] = None,
+    forecast: Annotated[FORECASTS, Field(description="Forecast id - call list_available_forecasts to discover valid values")] = None,
+    cycle: Annotated[
+        str,
+        Field(
+            description="Cycle (00-23)",
+            pattern=r"^(?:[01]\d|2[0-3])$",
+        ),
+    ] = "00",
+    vpu: Annotated[
+        str,
+        Field(
+            description="VPU identifier - call list_available_vpus to discover valid values. Accepts formats like '06', 'VPU_06', or '3W'"
+        ),
+    ] = None,
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "DuckDB SQL query against table `output` — the union of all parquet files in "
+                "the selector. Two provenance columns are added: `filename` (basename only) "
+                "and `source_path` (full S3 URL). Single read-only SELECT or WITH...SELECT "
+                "only. Must read FROM output. For data extraction, prefer WHERE filtering "
+                "over LIMIT — LIMIT silently drops rows and breaks time series."
+            ),
+            pattern=r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b).*$",
+        ),
+    ] = "SELECT filename, COUNT(*) AS rows_per_file FROM output GROUP BY filename ORDER BY filename",
+    ensemble: Annotated[
+        Optional[str],
+        Field(description="Optional ensemble member for medium_range.", pattern=r"^\d+$"),
+    ] = None,
+) -> Dict[str, Any]:
+    err = _require(model=model, forecast=forecast, vpu=vpu)
+    if err:
+        return err
     LOGGER.info(
-        "query_output_file_from_output_selector result: %s",
-        result,
+        "Tool query_output_files_from_output_selector called model=%s date=%s forecast=%s cycle=%s "
+        "vpu=%s ensemble=%s query_preview=%s",
+        model,
+        date,
+        _as_id(forecast),
+        cycle,
+        _as_id(vpu),
+        ensemble,
+        _preview_text(query),
+    )
+
+    end_date = _parse_date_or_today(date, "date")
+    params: Dict[str, Any] = {
+        "model": model,
+        "date": end_date.isoformat(),
+        "forecast": _as_id(forecast),
+        "cycle": cycle,
+        "vpu": _as_id(vpu),
+        "query": query,
+    }
+
+    if ensemble is not None:
+        params["ensemble"] = ensemble
+
+    result = query_output_files_from_output_selector(
+        model=params["model"],
+        date=params["date"],
+        forecast=params["forecast"],
+        cycle=params["cycle"],
+        vpu=params["vpu"],
+        query=params["query"],
+        ensemble=params.get("ensemble"),
+    )
+
+    LOGGER.info(
+        "Tool query_output_files_from_output_selector completed model=%s date=%s forecast=%s cycle=%s vpu=%s result=%s",
+        model,
+        end_date.isoformat(),
+        params["forecast"],
+        cycle,
+        params["vpu"],
+        _summarize_tool_result(result),
     )
     return result
 

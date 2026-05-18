@@ -195,6 +195,66 @@ def test_pattern_mismatch_fix_hint_includes_pattern_and_field():
     )
 
 
+def test_pattern_mismatch_envelope_surfaces_field_description():
+    """Bug 2b regression: pattern-mismatch envelopes include the field's
+    Pydantic ``Field(description=...)`` text alongside the regex.
+
+    Observed 2026-05-18 against the deployed server: an LLM passed
+    date='ngen.20250929' (extracted from an S3 path) to
+    query_output_files_from_output_selector. The fix_hint at the time
+    was "date must match pattern '^(?:\\\\d{4}-\\\\d{2}-\\\\d{2}|\\\\d{4}/\\\\d{2}/\\\\d{2})$'."
+    — actionable but required the LLM to mentally parse the regex.
+
+    The Pydantic Field for the same arg already carries
+    ``description="YYYY-MM-DD or YYYY/MM/DD"``. The middleware now
+    surfaces that description into both:
+      - the ``details`` entry (so structured-data consumers see it), and
+      - the ``fix_hint`` prose (so LLMs reading the natural-language
+        instruction get the format hint inline with the regex).
+    """
+
+    async def go():
+        async with Client(mcp) as c:
+            return await c.call_tool(
+                "query_output_files_from_output_selector",
+                {
+                    "model": "cfe_nom",
+                    "forecast": "medium_range",
+                    "cycle": "00",
+                    "vpu": "06",
+                    "date": "ngen.20250929",  # the offending value
+                    "query": "SELECT * FROM output LIMIT 1",
+                },
+            )
+
+    result = _run(go())
+    payload = result.structured_content
+    assert isinstance(payload, dict)
+    assert payload.get("error", "").startswith("invalid_args:")
+
+    # details entry carries the schema description alongside the pattern.
+    details = payload.get("details") or []
+    date_entries = [
+        d for d in details
+        if d.get("type") == "string_pattern_mismatch" and d.get("field") == "date"
+    ]
+    assert date_entries, f"expected date pattern-mismatch entry; got {details}"
+    pe = date_entries[0]
+    assert pe.get("description") == "YYYY-MM-DD or YYYY/MM/DD", (
+        f"details entry should carry the Field(description=...) text; got {pe}"
+    )
+
+    # fix_hint also surfaces the description inline with the pattern.
+    fix_hint = payload.get("fix_hint", "")
+    assert "YYYY-MM-DD" in fix_hint, (
+        f"fix_hint should include the natural-language format hint; got: {fix_hint!r}"
+    )
+    # And the regex is still there for fuller context.
+    assert "\\d{4}" in fix_hint, (
+        f"fix_hint should still include the regex pattern; got: {fix_hint!r}"
+    )
+
+
 def test_date_out_of_bounds_returns_envelope_not_raise():
     """ValueError from _validate_date_bounds in a tool body becomes an envelope.
 

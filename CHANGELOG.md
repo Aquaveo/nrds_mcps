@@ -7,6 +7,74 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- New MCP tool `query_output_files_from_output_selector` runs a single
+  read-only DuckDB query across **all parquet output files** for a
+  selector (model/date/forecast/cycle/vpu, plus `ensemble` for
+  `medium_range`) as a unified dataset. Each result row carries two
+  provenance columns: `filename` (basename only — e.g.
+  `troute_output_202605180100.parquet`) and `source_path` (full S3 URL).
+  The basename split lets LLM SQL extract time portions or labels via
+  `substr` / `regexp_extract` without tripping over the `s3://...`
+  prefix. Use this for cross-file aggregations and ranking when the
+  singular `query_output_file_from_output_selector` would otherwise
+  require N separate calls.
+
+  - Parquet only — NetCDF outputs in the same directory are intentionally
+    ignored. Selectors that resolve to only `.nc` files return a
+    `not_found` envelope with `count` reflecting the unfiltered total so
+    the LLM can redirect to the singular tool.
+  - Default query: `SELECT filename, * FROM output LIMIT 10`. The
+    description recommends WHERE-clause filtering (by feature_id, time
+    range, etc.) for data extraction and reserves LIMIT for schema
+    exploration / sampling only. Earlier iteration of this tool used
+    `SELECT filename, * FROM output LIMIT 10` as the default; the
+    `LIMIT 10` was anchoring downstream LLM calls — they copied it
+    into every retry even for time-series extraction where dropping
+    rows breaks the series. New default:
+    `SELECT filename, COUNT(*) AS rows_per_file FROM output GROUP BY filename ORDER BY filename`
+    — gives the LLM a useful first look at row counts without biasing
+    toward truncation.
+
+### Changed
+
+- `EXPECTED_MIN_TOOLS` in `release.yml` bumped 10 → 11.
+- `REQUIRED` smoke list in `release.yml` adds
+  `query_output_files_from_output_selector` so a regression that drops
+  the registration fails the deploy gate.
+- **Server log readability**: the
+  `query_output_file_from_output_selector` and
+  `query_output_files_from_output_selector` tool handlers no longer
+  dump the entire result envelope (including the full `data` array) to
+  INFO logs after completion. They now log a one-line summary with
+  aggregates *and a single sample row* — operators can spot-check that
+  the data looks right without the per-row dump. Success line shape:
+
+      ok=True file_count=10 rows=240 columns=[time,flow]
+      sample_row={'time': '2026-05-18T02:00:00.000000Z', 'flow': 18.58}
+
+  Error line shape:
+
+      ok=False code=not_found message=No output files matched. fix_hint_preview=...
+
+  The previous behavior produced ~19 KB single-line log entries on a
+  10-file × 240-row query; the new format is capped at ~500 chars
+  regardless of payload size. Wide column lists are truncated with a
+  `...+N` tail. New helper: `nextgen_mcp.utils._summarize_tool_result`.
+- **Validation envelope quality**: when a tool input fails a
+  Pydantic constraint (`string_pattern_mismatch`, numeric bounds,
+  length, enum), the envelope now surfaces the field's
+  `Field(description=...)` text alongside the constraint. For example,
+  `date='ngen.20250929'` previously produced
+  `fix_hint: "date must match pattern '^(?:\\d{4}-\\d{2}-\\d{2}|...)$'"`
+  which the LLM had to mentally parse the regex to recover from. The
+  new envelope reads
+  `fix_hint: "date (YYYY-MM-DD or YYYY/MM/DD) must match pattern '...'"`
+  and the `details[].description` field carries the same text for
+  structured-data consumers. Shortens recovery to one round trip when
+  the LLM mis-formats a regex-constrained kwarg.
+
 ## [0.4.0] - 2026-05-16
 
 ### Removed (BREAKING - tool surface)
