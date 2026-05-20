@@ -7,6 +7,128 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-20
+
+**Breaking release.** Major reshape of the query/resolve tool cluster and
+removal of NetCDF support. External clients hardcoded to the deleted tool
+names or NetCDF queries will break at the deploy. See "Migration" below
+for the rename map.
+
+### Breaking changes
+
+- **4 query/resolve tools deleted** (consolidated into the new
+  `query_files_by_selector`):
+  - `query_output_file` (direct s3_url + SQL)
+  - `query_output_file_from_output_selector` (single-file with silent
+    `index=0` default — the diagnosed mis-selection source)
+  - `query_output_files_from_output_selector` (all-files cross-file query)
+  - `resolve_output_file` (selector → s3_url; redundant since
+    `list_available_output_files` already populates the `path` field per
+    entry)
+
+- **3 slash prompts deleted** alongside their target tools:
+  - `query_by_url` (targeted `query_output_file`)
+  - `resolve_file_by_index` (targeted `resolve_output_file`)
+  - `resolve_file_by_name` (targeted `resolve_output_file`)
+
+- **NetCDF (`.nc`, `.nc4`) support removed.** This server is parquet-only
+  as of v0.5.0. NetCDF outputs are still available in S3; users query
+  them locally with netCDF-aware tooling (xarray, h5netcdf, etc.).
+
+### Added
+
+- **New MCP tool `query_files_by_selector`** — the canonical query tool for
+  NRDS parquet outputs. Queries one OR many files in a single call:
+  - Omit `file_name` and `index` → query all parquet files for the
+    selector as a unioned dataset. Result rows carry `filename` + `source_path`
+    provenance columns (same as the legacy plural tool).
+  - Set `file_name` → exact-name lookup against the parquet-filtered list.
+  - Set `index` → 0-based index into the parquet-filtered list. **NetCDF
+    files do not consume index slots** — `index=N` always refers to the
+    N-th parquet file, even when NetCDF files exist in the same directory.
+  - `file_name` and `index` are mutually exclusive (XOR enforced at the
+    logic layer).
+  - Selector args (`model`, `date`, `forecast`, `cycle`, `vpu`, `ensemble`)
+    are required-together via the existing `_require(model, forecast, vpu)`
+    pattern.
+
+- **New `_excluded_netcdf_count` field** on result envelopes for
+  mixed-format selectors. When a selector contains both parquet and
+  NetCDF files and the caller didn't supply `file_name`/`index`, the
+  query silently filters to parquet AND surfaces the dropped-NetCDF
+  count via this optional field (omitted when zero). Preserves R2 ("no
+  silent default") parity with the deleted `index=0` fall-through.
+
+- **Two new error envelope classes**:
+  - `unsupported_format:` — fires when `file_name` points at a `.nc`
+    or `.nc4` file. Server-side check happens BEFORE any S3 I/O. Envelope
+    carries `format_detected="netcdf"`, the offending `file_name`, and a
+    `fix_hint` pointing the LLM at netCDF-aware tooling for local query.
+  - `no_supported_files:` — fires when the selector resolves to N files
+    none of which are parquet. Envelope carries `files_found`,
+    `netcdf_files`, `parquet_files=0`.
+
+- **Description-contract test** (`test_mcp/test_tool_descriptions.py`)
+  enforces the lockstep rule. Asserts positive invariants (parquet-only
+  mention, error class names, provenance columns) AND negative
+  invariants (no concrete `s3://` URLs, no example filenames, no inline
+  SQL).
+
+### Removed
+
+- Python deps `xarray` and `h5netcdf` — drops ~30MB+ from the Docker
+  image (xarray alone is large).
+- Dead helpers in `nextgen_mcp/utils_rest.py`:
+  - `_duckdb_query_parquet` (single-file; consumer was `query_output_file`)
+  - `_detect_output_file_kind` (parquet-vs-netcdf branch)
+  - `_validate_nrds_output_file_url` (URL guard for arbitrary external input)
+  - `_normalize_output_file_url` (s3:// → https:// translator)
+  - `_get_troute_df` (t-route NetCDF crosswalk loader)
+  - `_duckdb_query_netcdf` (in-memory pandas → DuckDB)
+- Dead helper in `nextgen_mcp/_io_config.py`:
+  - `open_fsspec_file` (fsspec wrapper used only by `_get_troute_df`)
+
+### Changed
+
+- `release.yml` smoke-gate:
+  - `EXPECTED_MIN_TOOLS` lowered 11 → 9 to match the post-merge catalog.
+  - `REMOVED` tuple extended with the 4 deleted query-cluster tool names.
+  - `REQUIRED` tuple: `query_output_files_from_output_selector` dropped;
+    `query_files_by_selector` added. `lookup_hydrofabric_feature` stays.
+  - `REQUIRED_PROMPTS` unchanged.
+
+- `plot_timeseries` slash prompt retargeted from
+  `query_output_file_from_output_selector` to `query_files_by_selector`.
+  Prompt-surface args dropped `index` — the new tool defaults to "query
+  all parquet files for the selector"; the SQL `WHERE feature_id = ...`
+  in the rendered prompt filters to one feature across the full union.
+  Other prompt-surface args (`variable`, `feature_id`, `model`, `forecast`,
+  `date`, `cycle`, `vpu`) unchanged.
+
+- `nextgen_mcp/README.md` tool list updated to reflect the 9-tool surface.
+
+### Migration
+
+If you were calling:
+
+| Old tool | Replacement |
+|---|---|
+| `query_output_file(s3_url, query)` | No direct replacement. Use `query_files_by_selector` with the selector args; for ad-hoc parquet URLs outside the NRDS selector hierarchy, query locally with DuckDB. |
+| `query_output_file_from_output_selector(model, date, …, file_name, index)` | `query_files_by_selector(model, date, …, file_name=…, index=…)`. NetCDF support dropped; pass parquet `file_name` or `index` only. |
+| `query_output_files_from_output_selector(model, date, …)` | `query_files_by_selector(model, date, …)` with `file_name`/`index` both omitted. Same UNION-ALL semantics, same provenance columns. |
+| `resolve_output_file(model, date, …, file_name=…, index=…)` | `list_available_output_files(model, date, …)` and read the `path` field from each entry. The list response already carries full S3 URLs. |
+
+NetCDF queries: this server no longer supports them. Download the file
+from S3 and query locally with `xarray` / `h5netcdf` / your tool of choice.
+
+External consumers using `:latest` Docker tag will hit this breaking
+change at the next pull. Pin to a specific minor tag (e.g.,
+`ghcr.io/aquaveo/nrds-mcps:v0.4`) if you need to defer adoption — confirm
+tag availability in the GHCR registry before relying on it.
+
+Plan: `docs/plans/2026-05-20-001-refactor-nrds-mcps-query-consolidation-plan.md`
+Brainstorm: `docs/brainstorms/2026-05-20-nrds-mcps-query-cluster-consolidation-requirements.md`
+
 ## [0.4.1] - 2026-05-18
 
 ### Added
