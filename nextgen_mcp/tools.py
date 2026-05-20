@@ -32,9 +32,11 @@ from .logic import (
     query_output_file,
     query_output_file_from_output_selector,
     query_output_files_from_output_selector,
+    query_files_by_selector,
     lookup_hydrofabric_feature as _lookup_hydrofabric_feature,
     get_hydrofabric_pmtiles_layers
 )
+from ._tool_descriptions import QUERY_FILES_BY_SELECTOR_DESCRIPTION
 
 from .middleware._input_validation_middleware import InvalidLLMInputError
 
@@ -350,6 +352,117 @@ def list_available_output_files_tool(
         cycle,
         params["vpu"],
         len((result.get("files") or [])) if isinstance(result, dict) else None,
+    )
+    return result
+
+
+@mcp.tool(
+    name="query_files_by_selector",
+    description=QUERY_FILES_BY_SELECTOR_DESCRIPTION,
+)
+def query_files_by_selector_tool(
+    model: Annotated[
+        MODELS,
+        Field(description="Model id - call list_available_models to discover valid values"),
+    ] = None,
+    date: Annotated[
+        Optional[str],
+        Field(description="YYYY-MM-DD or YYYY/MM/DD", pattern=DATE_PATTERN),
+    ] = None,
+    forecast: Annotated[
+        FORECASTS,
+        Field(description="Forecast id - call list_available_forecasts to discover valid values"),
+    ] = None,
+    cycle: Annotated[
+        str,
+        Field(
+            description="Cycle (00-23)",
+            pattern=r"^(?:[01]\d|2[0-3])$",
+        ),
+    ] = "00",
+    vpu: Annotated[
+        str,
+        Field(
+            description=(
+                "VPU identifier - call list_available_vpus to discover valid values. "
+                "Accepts formats like '06', 'VPU_06', or '3W'"
+            ),
+        ),
+    ] = None,
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "DuckDB SQL query against table `output` (parquet files unioned with "
+                "filename + source_path provenance columns). Single read-only SELECT "
+                "or WITH...SELECT statement only. Must read FROM output. Prefer WHERE "
+                "filtering over LIMIT for data extraction; LIMIT silently drops rows."
+            ),
+            pattern=r"(?is)^\s*(?:WITH\b.*?\bSELECT\b|SELECT\b).*$",
+        ),
+    ] = "SELECT filename, COUNT(*) AS rows_per_file FROM output GROUP BY filename ORDER BY filename",
+    ensemble: Annotated[
+        Optional[str],
+        Field(description="Optional ensemble member for medium_range.", pattern=r"^\d+$"),
+    ] = None,
+    file_name: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Optional filter to one file by exact name. Mutually exclusive with "
+                "index. Omit both to query all parquet files for the selector."
+            ),
+            min_length=1,
+        ),
+    ] = None,
+    index: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Optional filter to one file by 0-based index into the parquet-only "
+                "sorted file list. NetCDF files do not consume index slots. Mutually "
+                "exclusive with file_name."
+            ),
+            ge=0,
+        ),
+    ] = None,
+) -> Dict[str, Any]:
+    LOGGER.info(
+        "Tool query_files_by_selector called model=%s date=%s forecast=%s cycle=%s "
+        "vpu=%s ensemble=%s file_name=%s index=%s query_preview=%s",
+        model,
+        date,
+        _as_id(forecast),
+        cycle,
+        _as_id(vpu),
+        ensemble,
+        file_name,
+        index,
+        _preview_text(query),
+    )
+
+    end_date = _parse_date_or_today(date, "date")
+    result = query_files_by_selector(
+        model=model,
+        date=end_date.isoformat(),
+        forecast=_as_id(forecast),
+        cycle=cycle,
+        vpu=_as_id(vpu),
+        query=query,
+        ensemble=ensemble,
+        file_name=file_name,
+        index=index,
+    )
+
+    LOGGER.info(
+        "Tool query_files_by_selector completed model=%s date=%s forecast=%s "
+        "cycle=%s vpu=%s result=%s",
+        model,
+        end_date.isoformat(),
+        _as_id(forecast),
+        cycle,
+        _as_id(vpu),
+        _summarize_tool_result(result),
     )
     return result
 
