@@ -195,8 +195,7 @@ def list_output_files(
 
 
 # ---------------------------------------------------------------------------
-# Query/lookup prompt templates - one per query/lookup tool plus
-# a second variant for resolve_output_file's XOR.
+# Lookup prompt templates - one per lookup tool.
 #
 # Pattern mirrors the discovery prompts above:
 #   - Argument names mirror the underlying tool's argument names exactly.
@@ -205,9 +204,11 @@ def list_output_files(
 #     LOCKSTEP RULE: when the tool's description changes, update both the
 #     tool and the @mcp.prompt arg description here.
 #   - Prose is imperative declarative.
-#   - The two resolve_file_* variants split the file_name XOR index
-#     constraint so the user picks intent at the slash level - see each
-#     variant's "do NOT also supply" instruction.
+#
+# v0.5.0 deletion note: query_by_url, resolve_file_by_index, and
+# resolve_file_by_name lived here previously and targeted query_output_file
+# / resolve_output_file. Both target tools were deleted alongside the
+# query-cluster consolidation; the prompts were removed in lockstep.
 # ---------------------------------------------------------------------------
 
 

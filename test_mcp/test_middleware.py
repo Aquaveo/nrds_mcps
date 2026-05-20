@@ -199,15 +199,14 @@ def test_pattern_mismatch_envelope_surfaces_field_description():
     """Bug 2b regression: pattern-mismatch envelopes include the field's
     Pydantic ``Field(description=...)`` text alongside the regex.
 
-    Observed 2026-05-18 against the deployed server: an LLM passed
-    date='ngen.20250929' (extracted from an S3 path) to
-    query_output_files_from_output_selector. The fix_hint at the time
-    was "date must match pattern '^(?:\\\\d{4}-\\\\d{2}-\\\\d{2}|\\\\d{4}/\\\\d{2}/\\\\d{2})$'."
-    — actionable but required the LLM to mentally parse the regex.
+    Originally observed 2026-05-18 against the deployed server with
+    query_output_files_from_output_selector; that tool was deleted in
+    v0.5.0 in favor of query_files_by_selector, which has the same date
+    Field/pattern. Test retargeted accordingly.
 
-    The Pydantic Field for the same arg already carries
-    ``description="YYYY-MM-DD or YYYY/MM/DD"``. The middleware now
-    surfaces that description into both:
+    The Pydantic Field for the date arg carries
+    ``description="YYYY-MM-DD or YYYY/MM/DD"``. The middleware surfaces
+    that description into both:
       - the ``details`` entry (so structured-data consumers see it), and
       - the ``fix_hint`` prose (so LLMs reading the natural-language
         instruction get the format hint inline with the regex).
@@ -216,7 +215,7 @@ def test_pattern_mismatch_envelope_surfaces_field_description():
     async def go():
         async with Client(mcp) as c:
             return await c.call_tool(
-                "query_output_files_from_output_selector",
+                "query_files_by_selector",
                 {
                     "model": "cfe_nom",
                     "forecast": "medium_range",
@@ -283,38 +282,46 @@ def test_date_out_of_bounds_returns_envelope_not_raise():
 
 
 def test_xor_violation_returns_envelope_not_raise():
-    """resolve_output_file file_name XOR index ValueError becomes an envelope.
+    """query_files_by_selector file_name XOR index returns an envelope.
 
-    Tool body raises InvalidLLMInputError("Provide exactly one of
-    'file_name' or 'index'.") when both or neither are supplied.
-    Middleware converts to invalid_args envelope so the LLM can fix the
-    call.
+    Originally exercised resolve_output_file's tool-body raise of
+    InvalidLLMInputError; that tool was deleted in v0.5.0. The new
+    query_files_by_selector enforces file_name XOR index directly via
+    the logic-layer function (returns _error_payload rather than
+    raising), so the middleware-convert-from-raise path is no longer
+    exercised by a public tool. The end-state behavior — caller gets
+    an invalid_args envelope naming both fields — is unchanged.
+
+    See ``test_query_files_by_selector.py::test_both_file_name_and_index_rejected``
+    for the same assertion at the logic-function entry point.
     """
 
     async def go():
         async with Client(mcp) as c:
             # Pass both file_name AND index - triggers the XOR check.
             return await c.call_tool(
-                "resolve_output_file",
+                "query_files_by_selector",
                 {
                     "model": "cfe_nom",
                     "forecast": "short_range",
                     "vpu": "06",
                     "file_name": "fake.parquet",
                     "index": 0,
+                    "query": "SELECT * FROM output",
                 },
             )
 
     result = _run(go())
     payload = result.structured_content
     assert isinstance(payload, dict)
-    assert payload.get("error", "").startswith("invalid_args:")
-    # Both field names appear so the LLM knows exactly which two are in
-    # conflict, and fix_hint is non-empty with the prescriptive message.
-    assert "file_name" in payload["error"]
-    assert "index" in payload["error"]
+    error_obj = payload.get("error")
+    # _error_payload shape: error is a dict with code + message
+    assert isinstance(error_obj, dict), f"expected dict error envelope; got {payload!r}"
+    assert error_obj.get("code") == "invalid_args"
+    assert "file_name" in error_obj.get("message", "")
+    assert "index" in error_obj.get("message", "")
     fix_hint = payload.get("fix_hint") or ""
-    assert "exactly one" in fix_hint
+    assert "file_name" in fix_hint.lower() or "pick one" in fix_hint.lower()
 
 
 def test_incidental_value_error_is_not_enveloped(monkeypatch):

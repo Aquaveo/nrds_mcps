@@ -389,29 +389,45 @@ def test_classify_llm_sql_error_falls_back_for_non_programmer_errors():
     assert cols == []
 
 
-def test_query_output_file_returns_envelope_on_binder_exception(monkeypatch):
+def test_query_files_by_selector_returns_envelope_on_binder_exception(monkeypatch):
     """Integration: when DuckDB raises BinderException against an LLM-supplied
     query, the tool returns a structured envelope with available_columns +
     fix_hint instead of letting the exception bubble.
 
     This is the recovery path qwen needed in the 2026-05-10 bug - the LLM
     gets the actual column list and can rewrite its query in one retry.
+
+    Migrated in v0.5.0 from the deleted query_output_file path. The new
+    query_files_by_selector uses _duckdb_query_parquets (plural), which
+    raises the same BinderException class on bad SQL.
     """
     import duckdb
 
     from nextgen_mcp import utils_rest
 
-    def _raise_binder(file_url, query):
+    # Mock S3 listing so the resolver returns a non-empty parquet list.
+    class _MockFs:
+        def ls(self, *_args, **_kwargs):
+            return [
+                "ciroh-community-ngen-datastream/outputs/cfe_nom/v2.2_hydrofabric/"
+                "20260501/short_range/00/06/ngen-run/outputs/troute/file_a.parquet",
+            ]
+    monkeypatch.setattr(logic, "s3_filesystem", lambda: _MockFs())
+
+    def _raise_binder(file_urls, query):
         raise duckdb.BinderException(
             'Referenced column "variable" not found in FROM clause!\n'
             'Candidate bindings: "output.feature_id", "output.velocity"'
         )
 
-    monkeypatch.setattr(utils_rest, "_duckdb_query_parquet", _raise_binder)
-    monkeypatch.setattr(logic, "_duckdb_query_parquet", _raise_binder)
+    monkeypatch.setattr(utils_rest, "_duckdb_query_parquets", _raise_binder)
 
-    result = logic.query_output_file(
-        s3_url="s3://ciroh-community-ngen-datastream/outputs/x/y.parquet",
+    result = logic.query_files_by_selector(
+        model="cfe_nom",
+        date="2026-05-01",
+        forecast="short_range",
+        cycle="00",
+        vpu="06",
         query="SELECT * FROM output WHERE variable = 'velocity'",
     )
     assert result.get("ok") is False
