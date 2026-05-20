@@ -698,13 +698,12 @@ def test_discovery_prompt_arg_name_parity_with_underlying_tool(
 
 
 # ---------------------------------------------------------------------------
-# Query/lookup prompts (Phase 2b) - lookup_feature, query_by_url,
-# resolve_file_by_index, resolve_file_by_name
+# Query/lookup prompts (Phase 2b) - lookup_feature
 #
-# These are query/lookup-archetype prompts (one per query/lookup tool plus
-# the XOR-driven extra variant for resolve_output_file). Tests mirror the
-# Phase 2a discovery harness shape: same five-test pattern parametrized
-# over the prompt set, plus a parallel arg-name parity block.
+# Originally this batch covered lookup_feature, query_by_url,
+# resolve_file_by_index, and resolve_file_by_name. The latter three were
+# deleted in v0.5.0 alongside the query-cluster consolidation (their
+# target tools were removed) — only lookup_feature remains.
 # ---------------------------------------------------------------------------
 
 
@@ -716,44 +715,14 @@ QUERY_LOOKUP_HINTS = {
     "hydrofabric_id": (
         "Hydrofabric identifier to search in columns id and divide_id"
     ),
-    "s3_url": (
-        "Full URL to ONE parquet or netcdf output file "
-        "(s3://... or https://...)"
-    ),
-    "query": "DuckDB SQL query against table output",
-    "index": "0-based output index, e.g., 0",
-    "file_name": "Exact filename (e.g. troute_output_...parquet)",
 }
 
 QUERY_LOOKUP_PROMPTS = {
     "lookup_feature": ("hydrofabric_id",),
-    "query_by_url": ("s3_url", "query"),
-    "resolve_file_by_index": (
-        "model",
-        "date",
-        "forecast",
-        "cycle",
-        "vpu",
-        "index",
-    ),
-    "resolve_file_by_name": (
-        "model",
-        "date",
-        "forecast",
-        "cycle",
-        "vpu",
-        "file_name",
-    ),
 }
 
-# Both resolve_file_* variants target the same underlying tool -
-# resolve_output_file's input schema contains both file_name and index,
-# so the parity test passes for either variant.
 QUERY_LOOKUP_PROMPT_TO_TOOL = {
     "lookup_feature": "lookup_hydrofabric_feature",
-    "query_by_url": "query_output_file",
-    "resolve_file_by_index": "resolve_output_file",
-    "resolve_file_by_name": "resolve_output_file",
 }
 
 
@@ -885,10 +854,6 @@ def test_query_lookup_prompt_arg_name_parity_with_underlying_tool(
     """Each prompt argument name exists on the underlying query/lookup
     tool's input schema. Catches arg-name drift between prompt and tool -
     the #1 risk in this plan (per feedback_input_output_name_alignment.md).
-
-    Both resolve_file_by_index and resolve_file_by_name target
-    resolve_output_file; index and file_name both exist on its schema, so
-    parity holds for either variant.
     """
     tool_name = QUERY_LOOKUP_PROMPT_TO_TOOL[prompt_name]
     tool_args = _tool_schema_properties(tool_name)
