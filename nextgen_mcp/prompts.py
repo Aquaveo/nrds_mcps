@@ -21,16 +21,15 @@ def plot_timeseries(
     date: Annotated[str, Field(description=DATE_HINT)],
     cycle: Annotated[str, Field(description=CYCLE_HINT)],
     vpu: Annotated[str, Field(description=VPU_HINT)],
-    index: Annotated[str, Field(description="0-based output index, e.g., 0")],
 ) -> str:
     """Plot a NRDS output-file timeseries as a line chart.
 
     Renders a natural-language request that drives a downstream
-    ``query_output_file_from_output_selector`` invocation followed by a
-    line-chart visualization of the resulting time series. Designed for
-    the chatbox slash-command surface.
+    ``query_files_by_selector`` invocation followed by a line-chart
+    visualization of the resulting time series. Designed for the
+    chatbox slash-command surface.
 
-    All 8 arguments are ``required: true`` with no Python-level
+    All 7 arguments are ``required: true`` with no Python-level
     defaults; each carries a ``Field(description=...)`` advertising
     the valid format or enum (e.g., ``cfe_nom / lstm / routing_only``,
     ``yyyy-mm-dd``). Calling ``prompts/get(name, {})`` with empty args
@@ -44,25 +43,31 @@ def plot_timeseries(
     ``[bracket]`` tokens for the user to replace.
 
     Hints are derived from the validation types on
-    ``query_output_file_from_output_selector`` and the NRDS Literal
-    types in ``validation.py`` (``MODELS``, ``FORECASTS``,
-    ``DATE_PATTERN``). When NRDS adds a new model, forecast, or vpu,
-    update the description string here in lockstep.
+    ``query_files_by_selector`` and the NRDS Literal types in
+    ``validation.py`` (``MODELS``, ``FORECASTS``, ``DATE_PATTERN``).
+    When NRDS adds a new model, forecast, or vpu, update the
+    description string here in lockstep.
 
-    Argument names ``model``, ``forecast``, ``date``, ``cycle``, ``vpu``,
-    and ``index`` align with the selector args of
-    ``query_output_file_from_output_selector``. ``variable`` and
-    ``feature_id`` are narrative-only - they help the LLM build the
-    DuckDB ``query`` value but have no first-class counterpart in the
-    selector tool's schema.
+    Argument names ``model``, ``forecast``, ``date``, ``cycle``, and
+    ``vpu`` align with the selector args of ``query_files_by_selector``.
+    ``variable`` and ``feature_id`` are narrative-only - they help the
+    LLM build the DuckDB ``query`` value but have no first-class
+    counterpart in the selector tool's schema.
+
+    The rendered prompt instructs the LLM to omit ``file_name`` and
+    ``index`` so the query unions ALL parquet files for the selector;
+    ``WHERE feature_id = ...`` in the SQL filters to the single feature
+    across the full time series.
     """
     return (
         f"Retrieve a line chart plotting the {variable} time series "
-        f"for feature id {feature_id} for output index {index} for the "
+        f"for feature id {feature_id} for the "
         f"{forecast} forecast on {model} model and date {date}, "
         f"cycle {cycle}, and vpu {vpu}. "
+        f"Use query_files_by_selector with no file_name or index so "
+        f"all parquet files for the selector are unioned. "
         f"Use a query like: SELECT time, {variable} FROM output "
-        f"WHERE feature_id = {feature_id}"
+        f"WHERE feature_id = {feature_id} ORDER BY time"
     )
 
 
