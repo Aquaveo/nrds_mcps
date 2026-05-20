@@ -1,18 +1,18 @@
-"""Tests for ``query_output_files_from_output_selector`` — the multi-file
-parquet-query MCP tool.
+"""Tests for the ``_duckdb_query_parquets`` helper and shared payload
+summarizer.
 
-The function resolves an S3 directory from (model, date, forecast, cycle,
-vpu, ensemble), lists the files there, filters to parquet, and runs a
-single DuckDB query across all of them with a ``filename`` provenance
-column. These tests pin the four code paths that matter:
+The four behavior tests that previously lived here (against the deleted
+``query_output_files_from_output_selector``) were superseded in v0.5.0 by:
 
-  - happy path (3 parquet files, query returns rows)
-  - directory contains only ``.nc`` files (not_found with count)
-  - directory is empty (not_found with count=0)
-  - DuckDB raises ``BinderException`` (LLM-recoverable invalid_query envelope)
+  - ``test_query_files_by_selector.py``: end-to-end coverage of the new
+    unified tool including unsupported_format / no_supported_files /
+    excluded_netcdf_count envelopes
+  - ``test_exception_handling.py``: migrated BinderException recovery test
+    targeting ``query_files_by_selector`` + ``_duckdb_query_parquets``
 
-Following the same monkeypatch-the-helpers pattern as
-``test_exception_handling.py`` — we never hit live S3 or DuckDB.
+What remains here are the helper-level live-DuckDB tests against
+``_duckdb_query_parquets`` (filename basename, substr-on-filename) and the
+``_summarize_tool_result`` helper.
 """
 
 from __future__ import annotations

@@ -24,8 +24,6 @@ from .utils_rest import (
     _extract_yyyymmdd_from_date_folder,
     _label_from_id,
     _normalize_date_folder,
-    _duckdb_query_netcdf,
-    _get_troute_df,
     _duckdb_lookup_hydrofabric_feature,
     _normalize_record,
     _get_feature_center,
@@ -159,7 +157,7 @@ def get_output_file(model, date, forecast, cycle, vpu, file_name=None, index=Non
         fs = s3_filesystem()
         files = fs.ls(s3_dir, detail=False)
 
-        files = [f for f in files if f.lower().endswith(".parquet") or f.lower().endswith(".nc")]
+        files = [f for f in files if f.lower().endswith(".parquet")]
         files = sorted(files)
 
         items = [{"name": f.split("/")[-1], "path": _ensure_full_s3_url(f)} for f in files]

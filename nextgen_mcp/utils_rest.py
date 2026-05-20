@@ -5,9 +5,8 @@ import json
 import re
 import pandas as pd
 import duckdb
-import xarray as xr
 
-from ._io_config import HYDROFABRIC_INDEX_URL, duckdb_connect_with_httpfs, open_fsspec_file
+from ._io_config import HYDROFABRIC_INDEX_URL, duckdb_connect_with_httpfs
 
 
 # Per-code sanitized message + fix_hint. NEVER use str(exc) directly - 
@@ -386,22 +385,6 @@ def _duckdb_lookup_hydrofabric_feature(
         except Exception:
             pass
 
-def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
-    """Load the t-route crosswalk DataFrame.
-
-    Uses ``open_fsspec_file`` so the timeout-configured fsspec client
-    reaches the underlying h5netcdf transport. ``xarray.open_dataset``
-    cannot be called directly on a URL with a custom fsspec config - the
-    OpenFile context manager handles that.
-    """
-
-    with open_fsspec_file(s3_nc_url) as f:
-        nc_xarray = xr.open_dataset(f, engine="h5netcdf")
-        nc_df = nc_xarray.to_dataframe()
-        nc_df = nc_df.reset_index()
-
-    return nc_df
-
 def _duckdb_query_parquets(file_urls: List[str], query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query across multiple parquet files exposed as one temp view `output`.
 
@@ -438,20 +421,6 @@ def _duckdb_query_parquets(file_urls: List[str], query: str) -> pd.DataFrame:
         except Exception:
             pass
 
-
-def _duckdb_query_netcdf(df: pd.DataFrame , query: str) -> pd.DataFrame:
-    """Execute an arbitrary DuckDB query against a netcdf file exposed as temp view `output`."""
-    
-    con = duckdb.connect(database=":memory:")
-    con.register('tmp_table_nc', df)
-    try:
-        con.execute(f"CREATE OR REPLACE TEMP VIEW output AS SELECT * FROM tmp_table_nc")
-        return con.sql(query).df()
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
 
 def _normalize_date_yyyymmdd(date_str: str | None) -> str | None:
     """Normalize a date string to YYYYMMDD.
