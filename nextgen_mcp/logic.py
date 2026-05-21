@@ -646,7 +646,7 @@ def query_files_by_selector(
             query=query,
             columns=list(df.columns),
             rows=int(len(df)),
-            data=df.to_dict(orient="records"),
+            data=[_normalize_record(r) for r in df.to_dict(orient="records")],
         )
 
         # Surface the exclusion count when non-zero so the user/LLM has a

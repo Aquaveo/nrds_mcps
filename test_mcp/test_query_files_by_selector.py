@@ -149,6 +149,55 @@ def test_index_filter_returns_single_file_at_index(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# JSON-serialization contract
+# ---------------------------------------------------------------------------
+
+
+def test_nan_cells_serialize_to_valid_json(monkeypatch):
+    """NaN cells in the query result MUST become JSON null, not literal NaN.
+
+    Backstory: troute parquet output contains NaN in the ``nudge`` column for
+    non-assimilated reaches. Without normalization, pandas keeps the value as
+    ``float('nan')`` and Python's default ``json.dumps`` emits literal ``NaN``,
+    which (a) is not valid JSON and (b) makes the entire result envelope
+    un-parseable in JS clients. In chatbox-core, that string-failure path
+    bypasses ``_engine_dispatched`` + ``_cache_uri`` injection silently — so
+    the LLM tokenizes the full payload into the next tool call instead of
+    referencing the cache. Lock the contract: the envelope round-trips
+    through strict ``json.loads(json.dumps(...))``.
+    """
+    import json
+
+    listing = [_full("a.parquet")]
+    _install_fs(monkeypatch, listing)
+    _install_fake_parquets_query(
+        monkeypatch,
+        lambda urls, q: pd.DataFrame(
+            [
+                {"flow": 0.5, "nudge": float("nan")},
+                {"flow": 0.6, "nudge": float("nan")},
+                {"flow": 0.7, "nudge": 0.01},
+            ]
+        ),
+    )
+
+    result = logic.query_files_by_selector(
+        **SELECTOR,
+        query="SELECT * FROM output",
+    )
+
+    assert result.get("ok") is True
+    # Strict round-trip — emits with allow_nan=False so any residual NaN
+    # surfaces as a ValueError rather than silently producing invalid JSON.
+    round_tripped = json.loads(json.dumps(result, allow_nan=False))
+    rows = round_tripped["data"]
+    assert rows[0]["nudge"] is None
+    assert rows[1]["nudge"] is None
+    assert rows[2]["nudge"] == 0.01
+    assert rows[0]["flow"] == 0.5
+
+
+# ---------------------------------------------------------------------------
 # XOR + Pydantic edge cases
 # ---------------------------------------------------------------------------
 
