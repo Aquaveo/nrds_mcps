@@ -1,15 +1,11 @@
 """Lockstep contract tests for tool descriptions.
 
-Pattern reference:
-``docs/solutions/best-practices/lockstep-rule-description-string-drift-2026-05-11.md``
-
 Positive assertions: the description must contain load-bearing constraints
 (parquet-only, error class names, provenance column names).
 
 Negative assertions: the description must NOT contain concrete example values.
-Per ``feedback_no_examples_in_tool_descriptions.md``, LLMs copy concrete
-examples verbatim - any ``s3://`` URL, example filename, or inline SQL in
-the description leaks into tool calls.
+LLMs copy concrete examples verbatim — any ``s3://`` URL, example filename,
+or inline SQL in the description leaks into tool calls.
 """
 
 from __future__ import annotations

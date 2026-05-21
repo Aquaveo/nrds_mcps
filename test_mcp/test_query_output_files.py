@@ -96,16 +96,13 @@ def test_duckdb_query_parquets_filename_is_basename(tmp_path) -> None:
 
 
 def test_summarize_tool_result_includes_aggregates_and_sample_row() -> None:
-    """Bug 1 regression: log summary must show enough to spot-check the
-    result without dumping the full `data` array.
+    """Log summary must show enough to spot-check the result without dumping
+    the full ``data`` array.
 
-    Observed 2026-05-18 against the deployed server: the multi-file tool's
-    completion log line was ``LOGGER.info("...result: %s", result)`` which
-    repr'd the full envelope including a 240-row ``data`` array — a
-    ~19 KB single-line log entry per call. The first fix replaced that
-    with a too-sparse stats line; operators couldn't tell whether the
-    data looked right. The current contract is: aggregates (file_count,
-    rows, columns *by name*) + ONE sample row, all under ~500 chars.
+    Contract: aggregates (file_count, rows, columns *by name*) + ONE sample
+    row, all under ~500 chars. Reprs of full data arrays produce ~19 KB
+    single-line log entries per call; too-sparse stats lines hide whether
+    the data looked right. This shape is the middle ground.
     """
     from nextgen_mcp.utils import _summarize_tool_result
 

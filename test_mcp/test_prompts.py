@@ -271,7 +271,6 @@ def test_get_prompt_substitutes_supplied_args_only():
 # Small-model phrasing - plot_timeseries prose must give an unambiguous
 # SQL hint so small Ollama models (qwen, gemma) don't hallucinate a
 # column named "variable" from the phrase "for variable {variable}".
-# Bug observed 2026-05-10 on qwen running the full template.
 # ---------------------------------------------------------------------------
 
 
@@ -687,7 +686,7 @@ def test_discovery_prompt_arg_name_parity_with_underlying_tool(
 ):
     """Each prompt argument name exists on the underlying list_available_*
     tool's input schema. Catches arg-name drift between prompt and tool -
-    the #1 risk in this plan (per feedback_input_output_name_alignment.md).
+    a recurring risk class for slash-prompt surfaces.
     """
     tool_name = DISCOVERY_PROMPT_TO_TOOL[prompt_name]
     tool_args = _tool_schema_properties(tool_name)
@@ -853,7 +852,7 @@ def test_query_lookup_prompt_arg_name_parity_with_underlying_tool(
 ):
     """Each prompt argument name exists on the underlying query/lookup
     tool's input schema. Catches arg-name drift between prompt and tool -
-    the #1 risk in this plan (per feedback_input_output_name_alignment.md).
+    a recurring risk class for slash-prompt surfaces.
     """
     tool_name = QUERY_LOOKUP_PROMPT_TO_TOOL[prompt_name]
     tool_args = _tool_schema_properties(tool_name)

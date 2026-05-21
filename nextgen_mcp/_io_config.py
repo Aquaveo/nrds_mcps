@@ -4,7 +4,7 @@ All outbound network IO (S3 via fsspec, DuckDB httpfs) goes through helpers
 in this module so a single ``NRDS_HTTP_TIMEOUT_SECONDS`` env var controls
 every IO layer's per-request budget.
 
-Per the 2026-05-10-004 error-handling efficiency plan:
+Conventions:
 - Default 60s, intentionally permissive ("don't break working flows").
 - ``<=0`` env values fall back to default with a warning (defends against
   IaC pipelines inheriting misconfigured parent envs).

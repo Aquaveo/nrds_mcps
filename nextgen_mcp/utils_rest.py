@@ -187,11 +187,11 @@ def _classify_llm_sql_error(
     The LLM-facing envelope from this classifier is the SQL analogue of
     InputValidationEnvelopeMiddleware's `invalid_args` envelope: it gives
     the LLM a structured way to recover in one retry instead of stalling
-    in a thinking loop (as observed with qwen on 2026-05-10).
+    in a thinking loop.
 
-    Callers must use this AT LLM-supplied-SQL call sites only (currently
-    ``query_output_file`` in rest.py). For hardcoded-SQL paths, use the
-    existing ``_is_duckdb_programmer_error`` re-raise guard instead.
+    Use this AT LLM-supplied-SQL call sites only (``query_files_by_selector``).
+    For hardcoded-SQL paths, use ``_is_duckdb_programmer_error`` re-raise
+    instead.
     """
     exc_msg = str(exc)
     if isinstance(exc, duckdb.BinderException):

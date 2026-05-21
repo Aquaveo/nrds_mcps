@@ -223,23 +223,15 @@ _NULL_LITERALS = frozenset(("none", "null", "nil", "<nil>", "undefined", ""))
 def _coerce_none_string(v):
     """Coerce LLM-emitted null-literals to actual ``None``.
 
-    Workshop-class small models (observed: nemotron-3-nano:30b 2026-05-20)
-    sometimes emit string literals like ``"<nil>"`` / ``"None"`` / ``"null"``
-    when they want to pass ``None`` to an ``Optional[str]`` arg. Pydantic's
-    ``str`` pattern matcher rejects these because the literal doesn't match
-    the field's regex; the validator-envelope middleware then surfaces an
-    ``invalid_args:`` envelope and the LLM retries with actual ``None``.
+    Workshop-class small models sometimes emit string literals like
+    ``"<nil>"`` / ``"None"`` / ``"null"`` when they want to pass ``None``
+    to an ``Optional[str]`` arg. Pydantic's pattern matcher rejects these,
+    the validator-envelope middleware surfaces ``invalid_args:``, and the
+    LLM retries — recovery works but costs a round-trip.
 
-    This helper short-circuits that recovery round-trip by stripping common
-    null-literals to ``None`` at the ``BeforeValidator`` stage - before the
-    pattern check fires. Apply via:
-
-        Annotated[Optional[str], BeforeValidator(_coerce_none_string),
-                 Field(..., pattern=...)]
-
-    Recovery via the validator envelope still works for null-literals not in
-    this allowlist (small models invent novel-looking nulls); this just makes
-    the common case cheaper.
+    Apply as a ``BeforeValidator`` to strip common null-literals to actual
+    ``None`` before the pattern check fires. Recovery via the validator
+    envelope still handles novel null-literals outside this allowlist.
     """
     if isinstance(v, str) and v.strip().lower() in _NULL_LITERALS:
         return None

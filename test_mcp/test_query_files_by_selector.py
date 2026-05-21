@@ -394,15 +394,11 @@ def test_missing_model_returns_invalid_args(monkeypatch):
 # ---------------------------------------------------------------------------
 # Null-literal coercion for ensemble arg
 #
-# Observed 2026-05-20 against nemotron-3-nano:30b: small models emit string
-# literals like "<nil>" / "None" / "null" when they want to pass None to an
-# Optional[str] arg with a regex pattern. Without coercion, the Pydantic
-# pattern matcher rejects, the validator-envelope middleware fires, the LLM
-# retries with actual None — works but costs a round-trip.
-#
-# The BeforeValidator on the @mcp.tool wrapper short-circuits these at the
-# pattern check. Tested at the helper level (cheap unit test) AND via the
-# in-process Client (proves the wrapper is wired correctly).
+# Small models sometimes emit string literals like "<nil>" / "None" / "null"
+# for an Optional[str] arg. The BeforeValidator on the @mcp.tool wrapper
+# coerces these to None before validation. Tested at the helper level
+# (cheap unit test) AND via the in-process Client (proves the wrapper is
+# wired correctly).
 # ---------------------------------------------------------------------------
 
 

@@ -537,19 +537,14 @@ def query_files_by_selector(
 ) -> Dict[str, Any]:
     """Unified query tool for NRDS parquet outputs by selector.
 
-    Replaces the legacy 4-tool query cluster. Single-file filter (via
-    file_name or index) and no-filter (all parquet files for the selector)
-    share one resolution path; both end up calling _duckdb_query_parquets
-    with a list of 1+ URLs and a unified result-envelope shape.
+    Single-file filter (via file_name or index) and no-filter (all parquet
+    files for the selector) share one resolution path; both end up calling
+    _duckdb_query_parquets with a list of 1+ URLs and a unified result-
+    envelope shape.
 
-    Mutual exclusion: file_name XOR index is enforced by the tool's
-    Pydantic model_validator (the wrapper in tools.py). This logic-layer
-    function additionally normalizes/strips file_name and re-checks for
-    safety in case logic is invoked outside the MCP tool path.
-
-    See ``docs/brainstorms/2026-05-20-nrds-mcps-query-cluster-consolidation-requirements.md``
-    and ``docs/plans/2026-05-20-001-refactor-nrds-mcps-query-consolidation-plan.md``
-    for the design.
+    file_name XOR index: this logic-layer function normalizes/strips
+    file_name and enforces the XOR so the contract holds even when invoked
+    outside the MCP tool wrapper.
     """
     from .utils_rest import _duckdb_query_parquets
 

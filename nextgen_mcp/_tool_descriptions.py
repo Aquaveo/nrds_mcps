@@ -1,17 +1,14 @@
 """Module-level tool description constants.
 
-Tool description prose is extracted here so it can be the target of
-lockstep contract tests (see ``test_mcp/test_tool_descriptions.py``).
-The lockstep pattern is documented in
-``docs/solutions/best-practices/lockstep-rule-description-string-drift-2026-05-11.md``.
+Tool description prose is extracted here so ``test_mcp/test_tool_descriptions.py``
+can lock the content against drift via positive + negative substring assertions.
 
 Description content must obey:
   - Positive: name the load-bearing constraints (parquet-only, the error
     classes the LLM may receive, provenance columns).
-  - Negative: no concrete example values. Per
-    ``feedback_no_examples_in_tool_descriptions.md``, LLMs copy concrete
-    examples verbatim. No ``s3://`` URLs, no example filenames, no
-    inline SQL.
+  - Negative: no concrete example values. LLMs copy concrete examples
+    verbatim into tool calls. No ``s3://`` URLs, no example filenames,
+    no inline SQL.
 """
 
 QUERY_FILES_BY_SELECTOR_DESCRIPTION = (

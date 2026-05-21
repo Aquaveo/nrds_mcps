@@ -154,11 +154,9 @@ def test_pattern_mismatch_fix_hint_includes_pattern_and_field():
     """When a tool input fails a Pydantic regex pattern, the envelope's
     fix_hint must include the expected pattern AND name the field.
 
-    Observed 2026-05-10: qwen passed date='20260510' (no separators),
-    Pydantic raised string_pattern_mismatch on the
-    ^(?:\\d{4}-\\d{2}-\\d{2}|\\d{4}/\\d{2}/\\d{2})$ regex. The
-    middleware's old fix_hint just said 'Fix the type / value errors in
-    details' - the LLM had no clue what pattern to satisfy.
+    Without the field+pattern in the hint, the LLM sees only a generic
+    "Fix the type / value errors in details" and has to guess what pattern
+    to satisfy.
     """
 
     async def go():
@@ -196,13 +194,8 @@ def test_pattern_mismatch_fix_hint_includes_pattern_and_field():
 
 
 def test_pattern_mismatch_envelope_surfaces_field_description():
-    """Bug 2b regression: pattern-mismatch envelopes include the field's
-    Pydantic ``Field(description=...)`` text alongside the regex.
-
-    Originally observed 2026-05-18 against the deployed server with
-    query_output_files_from_output_selector; that tool was deleted in
-    v0.5.0 in favor of query_files_by_selector, which has the same date
-    Field/pattern. Test retargeted accordingly.
+    """Pattern-mismatch envelopes include the field's Pydantic
+    ``Field(description=...)`` text alongside the regex.
 
     The Pydantic Field for the date arg carries
     ``description="YYYY-MM-DD or YYYY/MM/DD"``. The middleware surfaces
@@ -257,11 +250,10 @@ def test_pattern_mismatch_envelope_surfaces_field_description():
 def test_date_out_of_bounds_returns_envelope_not_raise():
     """ValueError from _validate_date_bounds in a tool body becomes an envelope.
 
-    Observed 2026-05-10: passing date=2023-10-01 to list_available_forecasts
-    raised ValueError, which FastMCP wrapped in ToolError, which bubbled up
-    as an MCP protocol error. The LLM saw an unrecoverable traceback. Now
-    the middleware catches the ToolError-wrapped ValueError and returns an
-    `invalid_args:` envelope carrying the original prescriptive message.
+    Without middleware conversion, the ValueError → FastMCP ToolError →
+    MCP-protocol error path produces an unrecoverable traceback for the LLM.
+    The middleware catches the ToolError-wrapped ValueError and returns an
+    ``invalid_args:`` envelope carrying the original prescriptive message.
     """
 
     async def go():

@@ -394,12 +394,8 @@ def test_query_files_by_selector_returns_envelope_on_binder_exception(monkeypatc
     query, the tool returns a structured envelope with available_columns +
     fix_hint instead of letting the exception bubble.
 
-    This is the recovery path qwen needed in the 2026-05-10 bug - the LLM
-    gets the actual column list and can rewrite its query in one retry.
-
-    Migrated in v0.5.0 from the deleted query_output_file path. The new
-    query_files_by_selector uses _duckdb_query_parquets (plural), which
-    raises the same BinderException class on bad SQL.
+    The LLM gets the actual column list and rewrites its query in one retry
+    rather than stalling on an unrecoverable traceback.
     """
     import duckdb
 
