@@ -4,6 +4,7 @@ from ._mcp import mcp, LOGGER
 from typing import Optional, Dict, Any
 from typing_extensions import Annotated
 from pydantic import Field
+from pydantic.functional_validators import BeforeValidator
 from .utils import (
     _prefer_id_objects,
     _as_id,
@@ -15,6 +16,7 @@ from .utils import (
     _validate_date_bounds,
     _preview_text,
     _summarize_tool_result,
+    _coerce_none_string,
 )
 from .validation import (
     DATE_PATTERN,
@@ -312,7 +314,15 @@ def list_available_output_files_tool(
         ),
     ] = None,
     ensemble: Annotated[
-        Optional[str], Field(description="Optional ensemble member (1 or 16)", pattern=r"^(?:1|16)$")
+        Optional[str],
+        BeforeValidator(_coerce_none_string),
+        Field(
+            description=(
+                "Ensemble member for medium_range forecast. Current data uses "
+                "ensemble 1; defaults to 1 when omitted. Ignored for "
+                "short_range and analysis_assim_extend (no ensemble dimension)."
+            ),
+        ),
     ] = None,
 ) -> Dict[str, Any]:
     err = _require(model=model, forecast=forecast, vpu=vpu)
@@ -399,7 +409,14 @@ def query_files_by_selector_tool(
     ] = "SELECT filename, COUNT(*) AS rows_per_file FROM output GROUP BY filename ORDER BY filename",
     ensemble: Annotated[
         Optional[str],
-        Field(description="Optional ensemble member for medium_range.", pattern=r"^\d+$"),
+        BeforeValidator(_coerce_none_string),
+        Field(
+            description=(
+                "Ensemble member for medium_range forecast. Current data uses "
+                "ensemble 1; defaults to 1 when omitted. Ignored for "
+                "short_range and analysis_assim_extend (no ensemble dimension)."
+            ),
+        ),
     ] = None,
     file_name: Annotated[
         Optional[str],

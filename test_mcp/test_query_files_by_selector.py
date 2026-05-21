@@ -389,3 +389,77 @@ def test_missing_model_returns_invalid_args(monkeypatch):
     assert result.get("ok") is False
     # _require pattern: existing error class
     assert "invalid_args" in result["error"]["code"] or "validation" in result["error"]["code"]
+
+
+# ---------------------------------------------------------------------------
+# Null-literal coercion for ensemble arg
+#
+# Observed 2026-05-20 against nemotron-3-nano:30b: small models emit string
+# literals like "<nil>" / "None" / "null" when they want to pass None to an
+# Optional[str] arg with a regex pattern. Without coercion, the Pydantic
+# pattern matcher rejects, the validator-envelope middleware fires, the LLM
+# retries with actual None — works but costs a round-trip.
+#
+# The BeforeValidator on the @mcp.tool wrapper short-circuits these at the
+# pattern check. Tested at the helper level (cheap unit test) AND via the
+# in-process Client (proves the wrapper is wired correctly).
+# ---------------------------------------------------------------------------
+
+
+import pytest
+from nextgen_mcp.utils import _coerce_none_string
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("<nil>", None),
+        ("None", None),
+        ("null", None),
+        ("nil", None),
+        ("undefined", None),
+        ("NULL", None),
+        ("  None  ", None),  # whitespace stripped
+        ("", None),
+        ("1", "1"),         # real ensemble value passes through
+        ("16", "16"),       # historical ensemble value passes through
+        (None, None),       # actual None passes through
+        (1, 1),             # non-string passes through unchanged
+    ],
+)
+def test_coerce_none_string(raw, expected):
+    assert _coerce_none_string(raw) == expected
+
+
+def test_query_files_by_selector_tool_accepts_nil_string_for_ensemble(monkeypatch):
+    """Integration: ensemble='<nil>' (string literal from small model) is
+    coerced to None at the BeforeValidator stage, BEFORE the pattern check
+    fires. Tool call succeeds without a validation-envelope round-trip.
+    """
+    import asyncio
+    from fastmcp import Client
+    from nextgen_mcp.mcp_server import mcp
+
+    listing = [_full("a.parquet")]
+    _install_fs(monkeypatch, listing)
+    _install_fake_parquets_query(
+        monkeypatch,
+        lambda urls, q: pd.DataFrame([{"filename": "a.parquet", "feature_id": 1}]),
+    )
+
+    async def go():
+        async with Client(mcp) as c:
+            return await c.call_tool(
+                "query_files_by_selector",
+                {
+                    **SELECTOR,
+                    "ensemble": "<nil>",  # the offending small-model literal
+                    "query": "SELECT * FROM output",
+                },
+            )
+
+    result = asyncio.get_event_loop_policy().new_event_loop().run_until_complete(go())
+    payload = result.structured_content
+    # Tool call should succeed — ensemble='<nil>' coerced to None, then
+    # ignored for short_range, no pattern-mismatch envelope fires.
+    assert payload.get("ok") is True, f"expected success; got {payload!r}"
