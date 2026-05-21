@@ -7,6 +7,12 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-20
+
+### Fixed
+
+- **NaN cells in `query_files_by_selector` results now serialize as JSON `null`** (`logic.py:649`). `df.to_dict(orient="records")` preserves pandas NaN as `float("nan")`, which Python's default `json.dumps(allow_nan=True)` emits as the literal token `NaN` — not valid JSON. JS clients that `JSON.parse` the result silently fell through to a raw-string path. In chatbox-core that bypassed both `_engine_dispatched` and `_cache_uri` injection (the engine gates injection on `typeof toolResult === "object"`, which is false for strings), so the LLM couldn't reference the cached payload by URI on the next tool call. Affected every hydrology query result touching the troute `nudge` column on a non-assimilated reach. Brings line 649 in line with the existing `_normalize_record` pass at `logic.py:754`. (#21)
+
 ## [0.5.0] - 2026-05-20
 
 **Breaking release.** Major reshape of the query/resolve tool cluster and
