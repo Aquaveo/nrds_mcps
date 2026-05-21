@@ -21,16 +21,15 @@ def plot_timeseries(
     date: Annotated[str, Field(description=DATE_HINT)],
     cycle: Annotated[str, Field(description=CYCLE_HINT)],
     vpu: Annotated[str, Field(description=VPU_HINT)],
-    index: Annotated[str, Field(description="0-based output index, e.g., 0")],
 ) -> str:
     """Plot a NRDS output-file timeseries as a line chart.
 
     Renders a natural-language request that drives a downstream
-    ``query_output_file_from_output_selector`` invocation followed by a
-    line-chart visualization of the resulting time series. Designed for
-    the chatbox slash-command surface.
+    ``query_files_by_selector`` invocation followed by a line-chart
+    visualization of the resulting time series. Designed for the
+    chatbox slash-command surface.
 
-    All 8 arguments are ``required: true`` with no Python-level
+    All 7 arguments are ``required: true`` with no Python-level
     defaults; each carries a ``Field(description=...)`` advertising
     the valid format or enum (e.g., ``cfe_nom / lstm / routing_only``,
     ``yyyy-mm-dd``). Calling ``prompts/get(name, {})`` with empty args
@@ -44,25 +43,31 @@ def plot_timeseries(
     ``[bracket]`` tokens for the user to replace.
 
     Hints are derived from the validation types on
-    ``query_output_file_from_output_selector`` and the NRDS Literal
-    types in ``validation.py`` (``MODELS``, ``FORECASTS``,
-    ``DATE_PATTERN``). When NRDS adds a new model, forecast, or vpu,
-    update the description string here in lockstep.
+    ``query_files_by_selector`` and the NRDS Literal types in
+    ``validation.py`` (``MODELS``, ``FORECASTS``, ``DATE_PATTERN``).
+    When NRDS adds a new model, forecast, or vpu, update the
+    description string here in lockstep.
 
-    Argument names ``model``, ``forecast``, ``date``, ``cycle``, ``vpu``,
-    and ``index`` align with the selector args of
-    ``query_output_file_from_output_selector``. ``variable`` and
-    ``feature_id`` are narrative-only - they help the LLM build the
-    DuckDB ``query`` value but have no first-class counterpart in the
-    selector tool's schema.
+    Argument names ``model``, ``forecast``, ``date``, ``cycle``, and
+    ``vpu`` align with the selector args of ``query_files_by_selector``.
+    ``variable`` and ``feature_id`` are narrative-only - they help the
+    LLM build the DuckDB ``query`` value but have no first-class
+    counterpart in the selector tool's schema.
+
+    The rendered prompt instructs the LLM to omit ``file_name`` and
+    ``index`` so the query unions ALL parquet files for the selector;
+    ``WHERE feature_id = ...`` in the SQL filters to the single feature
+    across the full time series.
     """
     return (
         f"Retrieve a line chart plotting the {variable} time series "
-        f"for feature id {feature_id} for output index {index} for the "
+        f"for feature id {feature_id} for the "
         f"{forecast} forecast on {model} model and date {date}, "
         f"cycle {cycle}, and vpu {vpu}. "
+        f"Use query_files_by_selector with no file_name or index so "
+        f"all parquet files for the selector are unioned. "
         f"Use a query like: SELECT time, {variable} FROM output "
-        f"WHERE feature_id = {feature_id}"
+        f"WHERE feature_id = {feature_id} ORDER BY time"
     )
 
 
@@ -190,8 +195,7 @@ def list_output_files(
 
 
 # ---------------------------------------------------------------------------
-# Query/lookup prompt templates - one per query/lookup tool plus
-# a second variant for resolve_output_file's XOR.
+# Lookup prompt templates - one per lookup tool.
 #
 # Pattern mirrors the discovery prompts above:
 #   - Argument names mirror the underlying tool's argument names exactly.
@@ -200,9 +204,11 @@ def list_output_files(
 #     LOCKSTEP RULE: when the tool's description changes, update both the
 #     tool and the @mcp.prompt arg description here.
 #   - Prose is imperative declarative.
-#   - The two resolve_file_* variants split the file_name XOR index
-#     constraint so the user picks intent at the slash level - see each
-#     variant's "do NOT also supply" instruction.
+#
+# v0.5.0 deletion note: query_by_url, resolve_file_by_index, and
+# resolve_file_by_name lived here previously and targeted query_output_file
+# / resolve_output_file. Both target tools were deleted alongside the
+# query-cluster consolidation; the prompts were removed in lockstep.
 # ---------------------------------------------------------------------------
 
 
@@ -226,88 +232,3 @@ def lookup_feature(
     return f"Look up the hydrofabric feature with id {hydrofabric_id}."
 
 
-@mcp.prompt
-def query_by_url(
-    s3_url: Annotated[
-        str,
-        Field(
-            description=(
-                "Full URL to ONE parquet or netcdf output file "
-                "(s3://... or https://...)"
-            )
-        ),
-    ],
-    query: Annotated[
-        str, Field(description="DuckDB SQL query against table output")
-    ],
-) -> str:
-    """Run a DuckDB SQL query against a single NRDS output file.
-
-    Drives the ``query_output_file`` tool. The arg name ``s3_url`` is
-    surfaced as-is on the prompt (it mirrors the underlying tool's arg
-    name per the parity contract); the description is the user-friendly
-    explanation.
-    """
-    return (
-        f"Run the DuckDB SQL query {query} against the output file at "
-        f"{s3_url}."
-    )
-
-
-@mcp.prompt
-def resolve_file_by_index(
-    model: Annotated[str, Field(description=MODEL_HINT)],
-    date: Annotated[str, Field(description=DATE_HINT)],
-    forecast: Annotated[
-        str,
-        Field(description=FORECAST_HINT),
-    ],
-    cycle: Annotated[str, Field(description=CYCLE_HINT)],
-    vpu: Annotated[str, Field(description=VPU_HINT)],
-    index: Annotated[str, Field(description="0-based output index, e.g., 0")],
-) -> str:
-    """Resolve a single output file by index in the sorted output-file list.
-
-    Drives the ``resolve_output_file`` tool. The XOR constraint on
-    ``resolve_output_file`` (file_name XOR index) is resolved at the
-    slash level - this variant supplies ``index`` and the LLM should NOT
-    also supply ``file_name``. ``index`` defaults to 0 on the underlying
-    tool but is surfaced as required on the prompt so editors are
-    explicit about routing.
-    """
-    return (
-        f"Resolve the output file by index {index} for the {model} model "
-        f"on {date}, {forecast} forecast, cycle {cycle}, vpu {vpu}. "
-        f"Do NOT also supply file_name."
-    )
-
-
-@mcp.prompt
-def resolve_file_by_name(
-    model: Annotated[str, Field(description=MODEL_HINT)],
-    date: Annotated[str, Field(description=DATE_HINT)],
-    forecast: Annotated[
-        str,
-        Field(description=FORECAST_HINT),
-    ],
-    cycle: Annotated[str, Field(description=CYCLE_HINT)],
-    vpu: Annotated[str, Field(description=VPU_HINT)],
-    file_name: Annotated[
-        str, Field(description="Exact filename (e.g. troute_output_...parquet)")
-    ],
-) -> str:
-    """Resolve a single output file by exact filename.
-
-    Drives the ``resolve_output_file`` tool. The XOR constraint on
-    ``resolve_output_file`` (file_name XOR index) is resolved at the
-    slash level - this variant supplies ``file_name`` and the LLM should
-    NOT also supply ``index``. The underlying tool's ``index`` defaults
-    to 0 (not None), so explicitly passing both file_name and index would
-    fail the XOR check; the docstring instruction tells the LLM to omit
-    index in this variant.
-    """
-    return (
-        f"Resolve the output file by exact filename {file_name} for the "
-        f"{model} model on {date}, {forecast} forecast, cycle {cycle}, "
-        f"vpu {vpu}. Do NOT also supply index."
-    )

@@ -5,9 +5,8 @@ during tool input validation into a structured tool-result envelope.
 Without this middleware, a hallucinated kwarg on an NRDS tool call
 causes pydantic's TypeAdapter to raise ``ValidationError`` inside
 ``Tool._run`` (FastMCP 3.2.x), which propagates out as an MCP-protocol
-error and produces a server traceback that any MCP-compatible client
-(chatbox-core, Claude Desktop, Cursor, Cline, etc.) cannot recover from
-cleanly.
+error and produces a server traceback that MCP clients cannot recover
+from cleanly.
 
 With this middleware in the FastMCP server's middleware stack, the same
 call returns a structured envelope as a normal tool result with

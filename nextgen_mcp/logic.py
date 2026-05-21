@@ -19,13 +19,11 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from .validation import OutputsFilesQuery
 from pydantic import ValidationError
+from .utils import _require
 from .utils_rest import (
     _extract_yyyymmdd_from_date_folder,
     _label_from_id,
     _normalize_date_folder,
-    _duckdb_query_parquet,
-    _duckdb_query_netcdf,
-    _get_troute_df,
     _duckdb_lookup_hydrofabric_feature,
     _normalize_record,
     _get_feature_center,
@@ -34,9 +32,6 @@ from .utils_rest import (
     _success_payload,
     _error_payload,
     _list_payload,
-    _validate_nrds_output_file_url,
-    _detect_output_file_kind,
-    _normalize_output_file_url,
     _classify_io_error,
     _is_duckdb_programmer_error,
     _classify_llm_sql_error,
@@ -162,7 +157,7 @@ def get_output_file(model, date, forecast, cycle, vpu, file_name=None, index=Non
         fs = s3_filesystem()
         files = fs.ls(s3_dir, detail=False)
 
-        files = [f for f in files if f.lower().endswith(".parquet") or f.lower().endswith(".nc")]
+        files = [f for f in files if f.lower().endswith(".parquet")]
         files = sorted(files)
 
         items = [{"name": f.split("/")[-1], "path": _ensure_full_s3_url(f)} for f in files]
@@ -361,249 +356,65 @@ def list_available_models() -> Dict:
         return _error_payload(code, msg, fix_hint=fix_hint, path=s3_url)
 
 
-def query_output_file(s3_url, query) -> Dict:
-    """Run a read-only DuckDB query against one NRDS output file in S3 (parquet or netcdf)."""
-    raw_url = str(s3_url or "").strip()
-    kind = _detect_output_file_kind(raw_url)
 
-    if kind == "parquet":
-        err = _validate_nrds_output_file_url(BUCKET, raw_url, (".parquet",))
-    elif kind == "netcdf":
-        err = _validate_nrds_output_file_url(BUCKET, raw_url, (".nc", ".nc4"))
-    else:
-        err = "s3_url must point to one .parquet, .nc, or .nc4 NRDS output file"
-
-    if err:
-        return _error_payload(
-            "validation_error",
-            err,
-            file=raw_url,
-            query=query,
-        )
-
-    file_url = _normalize_output_file_url(raw_url)
-    logger.info("Received query request for %s file: %s with query: %s", kind, file_url, query)
-
-    try:
-        query = validate_output_sql(query)
-    except ValueError as e:
-        logger.error("Invalid SQL query: %s", e)
-        return _error_payload(
-            "validation_error",
-            str(e),
-            file=file_url,
-            query=query,
-        )
-
-    try:
-        if kind == "parquet":
-            df = _duckdb_query_parquet(file_url, query)
-        else:
-            initial_df = _get_troute_df(file_url)
-            logger.info(
-                "Initial NetCDF DataFrame loaded with %s rows and columns: %s",
-                len(initial_df),
-                initial_df.columns.tolist(),
-            )
-            df = _duckdb_query_netcdf(initial_df, query)
-
-        if "time" in df.columns:
-            df["time"] = pd.to_datetime(df["time"], errors="coerce").dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-        logger.info("Query returned %s rows and columns: %s", len(df), df.columns.tolist())
-        return _success_payload(
-            file=file_url,
-            file_type=kind,
-            query=query,
-            columns=list(df.columns),
-            rows=int(len(df)),
-            data=df.to_dict(orient="records"),
-        )
-
-    except (duckdb.BinderException, duckdb.ParserException, duckdb.CatalogException) as e:
-        # LLM-supplied SQL programmer error. Unlike the hardcoded-SQL
-        # paths (which re-raise via _is_duckdb_programmer_error), these
-        # errors are RECOVERABLE if the LLM gets a structured envelope
-        # with the available column list as fix_hint - same shape as the
-        # input-validation middleware's invalid_args response. Observed
-        # 2026-05-10: qwen stalled on a BinderException when this re-raised
-        # as a protocol error; with the structured envelope below the
-        # LLM has the actual column candidates and can retry in one turn.
-        code, msg, fix_hint, available_columns = _classify_llm_sql_error(
-            e, file_url, query
-        )
-        logger.warning(
-            "LLM SQL error %s on %s file %s: %s",
-            type(e).__name__,
-            kind,
-            file_url,
-            e,
-        )
-        return _error_payload(
-            code,
-            msg,
-            fix_hint=fix_hint,
-            file=file_url,
-            file_type=kind,
-            query=query,
-            available_columns=available_columns,
-        )
-    except (OSError, ClientError, duckdb.Error) as e:
-        if _is_duckdb_programmer_error(e):
-            raise
-        code, msg, fix_hint = _classify_io_error(e)
-        logger.error(
-            "IO error %s querying %s file %s: %s",
-            type(e).__name__,
-            kind,
-            file_url,
-            e,
-        )
-        # not_found preserves the empty-result shape that callers expect
-        if code == "not_found":
-            return _error_payload(
-                code,
-                msg,
-                fix_hint=fix_hint,
-                file=file_url,
-                file_type=kind,
-                query=query,
-                columns=[],
-                rows=0,
-                data=[],
-            )
-        return _error_payload(
-            code,
-            msg,
-            fix_hint=fix_hint,
-            file=file_url,
-            file_type=kind,
-            query=query,
-        )
+_NETCDF_EXTS = (".nc", ".nc4")
 
 
-def query_output_file_from_output_selector(
+def _resolve_parquet_files_for_query(
     model,
     date,
     forecast,
     cycle,
     vpu,
-    query,
     ensemble: Optional[str] = None,
     file_name: Optional[str] = None,
-    index: Optional[int] = 0,
-) -> Dict:
-    """Resolve an output file by selector and run a raw query against the selected parquet or netcdf file."""
+    index: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Resolve a list of parquet S3 URLs from selector args.
 
-    logger.info(
-        "Received request to query output file from selector with "
-        "model=%s date=%s forecast=%s cycle=%s vpu=%s ensemble=%s file_name=%s index=%s query=%s",
-        model,
-        date,
-        forecast,
-        cycle,
-        vpu,
-        ensemble,
-        file_name,
-        index,
-        query,
-    )
+    Three branches:
+      - (file_name=None, index=None): list all parquet files for the selector.
+      - (file_name set,  index=None): filter to one file by exact name.
+      - (file_name=None, index set):  filter to one file by 0-based index
+        into the parquet-only, sorted list. NetCDF files do NOT consume
+        index slots — `index=N` always refers to the N-th parquet file.
 
-    resolved = get_output_file(
-        model=model,
-        date=date,
-        forecast=forecast,
-        cycle=cycle,
-        vpu=vpu,
-        file_name=file_name,
-        index=None if file_name is not None else (0 if index is None else index),
-        ensemble=ensemble,
-    )
+    The (file_name, index) BOTH-set case is rejected by the caller's
+    Pydantic model_validator before reaching here. We don't re-check.
 
-    if not isinstance(resolved, dict):
-        return _error_payload(
-            "execution_error",
-            "Unexpected response while resolving output file.",
-        )
-
-    if resolved.get("ok") is False:
-        return resolved
-
-    selected = resolved.get("selected")
-    if not selected:
-        return _error_payload(
-            "not_found",
-            "No output file matched the selector.",
-            dir=resolved.get("dir"),
-            count=resolved.get("count", 0),
-            selected=None,
-        )
-
-    selected_path = str((selected or {}).get("path") or "").strip()
-    if not selected_path:
-        return _error_payload(
-            "not_found",
-            "Resolved output file does not include a path.",
-            dir=resolved.get("dir"),
-            count=resolved.get("count", 0),
-            selected=selected,
-        )
-
-    query_result = query_output_file(
-        s3_url=selected_path,
-        query=query,
-    )
-
-    if isinstance(query_result, dict):
-        query_result.setdefault("dir", resolved.get("dir"))
-        query_result.setdefault("count", resolved.get("count"))
-        query_result.setdefault("selected", selected)
-
-    return query_result
-
-
-def query_output_files_from_output_selector(
-    model,
-    date,
-    forecast,
-    cycle,
-    vpu,
-    query,
-    ensemble: Optional[str] = None,
-) -> Dict:
-    """Run a single DuckDB query across **all parquet** output files for a selector.
-
-    Mirrors :func:`query_output_file_from_output_selector` but skips the
-    "pick one file" branch. The resulting envelope swaps the singular
-    ``selected`` for plural ``files`` plus a ``file_count`` shortcut.
-
-    NetCDF outputs in the same directory are intentionally ignored — combining
-    netCDF files requires pandas concat and has no clean DuckDB primitive.
-    Callers needing single-file netCDF queries should use
-    :func:`query_output_file_from_output_selector`.
+    Returns one of:
+      {"ok": True, "urls": [...], "s3_dir": ..., "excluded_netcdf_count": int}
+      or an error envelope (ok=False) ready to return to the caller.
     """
-    from .utils_rest import _duckdb_query_parquets
-
-    logger.info(
-        "Received request to query output files from selector with "
-        "model=%s date=%s forecast=%s cycle=%s vpu=%s ensemble=%s query=%s",
-        model,
-        date,
-        forecast,
-        cycle,
-        vpu,
-        ensemble,
-        query,
-    )
-
     date_folder = _normalize_date_folder(date)
-    s3_dir = f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}/{date_folder}/{forecast}/{cycle}"
+    s3_dir = (
+        f"s3://{BUCKET}/{OUTPUTS_DIR}/{model}/{PREFIX_HYDROFABRIC}/"
+        f"{date_folder}/{forecast}/{cycle}"
+    )
     if forecast == "medium_range":
         ens = ensemble or "1"
         s3_dir += f"/{ens}/{vpu}/{NGEN_RUN_PREFIX}"
     else:
         s3_dir += f"/{vpu}/{NGEN_RUN_PREFIX}"
 
+    # file_name path: check extension locally BEFORE any S3 I/O.
+    # Cheap short-circuit for the common LLM mistake of pointing at .nc/.nc4.
+    if file_name is not None:
+        lower = file_name.lower()
+        if lower.endswith(_NETCDF_EXTS):
+            return _error_payload(
+                "unsupported_format",
+                "NetCDF (.nc/.nc4) files are not supported by this server.",
+                fix_hint=(
+                    "This server queries parquet files only. NetCDF outputs "
+                    "are available in S3 - download with netCDF-aware tooling "
+                    "(xarray, h5netcdf) and query locally."
+                ),
+                format_detected="netcdf",
+                file_name=file_name,
+            )
+
+    # List S3 for both no-filter and index/file_name paths.
     try:
         fs = s3_filesystem()
         listing = fs.ls(s3_dir, detail=False)
@@ -613,55 +424,212 @@ def query_output_files_from_output_selector(
             "No output files matched the selector.",
             dir=s3_dir,
             count=0,
-            files=[],
-            file_count=0,
-            query=query,
         )
     except (OSError, ClientError, duckdb.Error) as e:
         if _is_duckdb_programmer_error(e):
             raise
         code, msg, fix_hint = _classify_io_error(e)
         logger.error("IO error %s listing %s: %s", type(e).__name__, s3_dir, e)
-        return _error_payload(code, msg, fix_hint=fix_hint, dir=s3_dir, query=query)
+        return _error_payload(code, msg, fix_hint=fix_hint, dir=s3_dir)
 
     listing_sorted = sorted(listing)
     items_all = [
         {"name": f.split("/")[-1], "path": _ensure_full_s3_url(f)}
         for f in listing_sorted
     ]
-    items = [it for it in items_all if it["name"].lower().endswith(".parquet")]
+    parquet_items = [
+        it for it in items_all if it["name"].lower().endswith(".parquet")
+    ]
+    netcdf_items = [
+        it for it in items_all
+        if it["name"].lower().endswith(_NETCDF_EXTS)
+    ]
 
-    if not items:
+    # no_supported_files: selector resolved to N files, none parquet.
+    if not parquet_items:
         return _error_payload(
-            "not_found",
-            "No parquet output files matched the selector.",
+            "no_supported_files",
+            (
+                f"Selector resolved to {len(items_all)} files, none parquet. "
+                "This server queries parquet only."
+            ),
+            fix_hint=(
+                "Check whether parquet outputs exist for this selector. If "
+                "only NetCDF is available, download from S3 with netCDF-aware "
+                "tooling."
+            ),
             dir=s3_dir,
-            count=len(items_all),
-            files=[],
-            file_count=0,
-            query=query,
+            files_found=len(items_all),
+            netcdf_files=len(netcdf_items),
+            parquet_files=0,
         )
+
+    # file_name branch: exact lookup against the parquet-filtered list.
+    # (We already short-circuited .nc/.nc4 above; getting here means the
+    # caller wants a parquet file. If the name doesn't match anything, it's
+    # genuinely not found.)
+    if file_name is not None:
+        match = next(
+            (it for it in parquet_items if it["name"] == file_name),
+            None,
+        )
+        if match is None:
+            return _error_payload(
+                "not_found",
+                f"file_name not found in selector: {file_name}",
+                fix_hint=(
+                    "Call list_available_output_files with the same selector "
+                    "to see valid file names."
+                ),
+                dir=s3_dir,
+                file_name=file_name,
+                files_found=len(items_all),
+                parquet_files=len(parquet_items),
+            )
+        return {
+            "ok": True,
+            "urls": [match["path"]],
+            "s3_dir": s3_dir,
+            "excluded_netcdf_count": len(netcdf_items),
+        }
+
+    # index branch: parquet-only semantics.
+    if index is not None:
+        if index >= len(parquet_items):
+            return _error_payload(
+                "invalid_args",
+                f"index {index} out of range; selector has {len(parquet_items)} parquet files.",
+                fix_hint=(
+                    "Use an index in [0, parquet_files - 1] or call "
+                    "list_available_output_files to see the file list."
+                ),
+                dir=s3_dir,
+                index=index,
+                files_found=len(parquet_items),
+                parquet_files=len(parquet_items),
+            )
+        return {
+            "ok": True,
+            "urls": [parquet_items[index]["path"]],
+            "s3_dir": s3_dir,
+            "excluded_netcdf_count": len(netcdf_items),
+        }
+
+    # No-filter branch: query all parquet files.
+    return {
+        "ok": True,
+        "urls": [it["path"] for it in parquet_items],
+        "s3_dir": s3_dir,
+        "excluded_netcdf_count": len(netcdf_items),
+    }
+
+
+def query_files_by_selector(
+    model,
+    date,
+    forecast,
+    cycle,
+    vpu,
+    query,
+    ensemble: Optional[str] = None,
+    file_name: Optional[str] = None,
+    index: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Unified query tool for NRDS parquet outputs by selector.
+
+    Single-file filter (via file_name or index) and no-filter (all parquet
+    files for the selector) share one resolution path; both end up calling
+    _duckdb_query_parquets with a list of 1+ URLs and a unified result-
+    envelope shape.
+
+    file_name XOR index: this logic-layer function normalizes/strips
+    file_name and enforces the XOR so the contract holds even when invoked
+    outside the MCP tool wrapper.
+    """
+    from .utils_rest import _duckdb_query_parquets
+
+    # Normalize file_name: strip whitespace; treat empty-after-strip as None
+    # so we behave the same as "no file_name set" rather than a vacuous match.
+    if isinstance(file_name, str):
+        file_name = file_name.strip()
+        if not file_name:
+            return _error_payload(
+                "invalid_args",
+                "file_name must be a non-empty string or omitted.",
+                fix_hint=(
+                    "Omit file_name to query all parquet files for the "
+                    "selector, or provide an exact filename."
+                ),
+            )
+
+    # Negative-index defense-in-depth (Pydantic ge=0 also catches this).
+    if index is not None and index < 0:
+        return _error_payload(
+            "invalid_args",
+            f"index must be >= 0; got {index}.",
+            fix_hint="Use a non-negative index, or omit index to query all files.",
+        )
+
+    # XOR — both file_name and index set is invalid.
+    if file_name is not None and index is not None:
+        return _error_payload(
+            "invalid_args",
+            "Provide file_name OR index, not both.",
+            fix_hint=(
+                "Pick one filter mode: file_name for an exact match, or "
+                "index for the N-th parquet file (0-based)."
+            ),
+        )
+
+    err = _require(model=model, forecast=forecast, vpu=vpu)
+    if err:
+        # _require returns a non-standard {"error": "<message>"} shape; wrap
+        # into the standard _error_payload envelope so callers get a
+        # consistent invalid_args: response.
+        return _error_payload(
+            "invalid_args",
+            err["error"],
+            fix_hint=(
+                "Call list_available_models / list_available_forecasts / "
+                "list_available_vpus to discover valid selector values."
+            ),
+        )
+
+    logger.info(
+        "Received request to query_files_by_selector with "
+        "model=%s date=%s forecast=%s cycle=%s vpu=%s ensemble=%s "
+        "file_name=%s index=%s query=%s",
+        model, date, forecast, cycle, vpu, ensemble, file_name, index, query,
+    )
+
+    resolved = _resolve_parquet_files_for_query(
+        model=model,
+        date=date,
+        forecast=forecast,
+        cycle=cycle,
+        vpu=vpu,
+        ensemble=ensemble,
+        file_name=file_name,
+        index=index,
+    )
+
+    if not resolved.get("ok"):
+        return resolved
+
+    file_urls = resolved["urls"]
+    s3_dir = resolved["s3_dir"]
+    excluded_netcdf_count = resolved["excluded_netcdf_count"]
 
     try:
         query = validate_output_sql(query)
     except ValueError as e:
-        logger.error("Invalid SQL query: %s", e)
         return _error_payload(
             "validation_error",
             str(e),
             dir=s3_dir,
-            files=items,
-            file_count=len(items),
+            file_count=len(file_urls),
             query=query,
         )
-
-    file_urls = [it["path"] for it in items]
-    logger.info(
-        "Querying %s parquet files in %s with: %s",
-        len(file_urls),
-        s3_dir,
-        query,
-    )
 
     try:
         df = _duckdb_query_parquets(file_urls, query)
@@ -671,15 +639,9 @@ def query_output_files_from_output_selector(
                 "%Y-%m-%dT%H:%M:%S.%fZ"
             )
 
-        logger.info(
-            "Query returned %s rows and columns: %s",
-            len(df),
-            df.columns.tolist(),
-        )
-        return _success_payload(
+        payload = _success_payload(
             dir=s3_dir,
-            files=items,
-            file_count=len(items),
+            file_count=len(file_urls),
             file_type="parquet",
             query=query,
             columns=list(df.columns),
@@ -687,29 +649,27 @@ def query_output_files_from_output_selector(
             data=df.to_dict(orient="records"),
         )
 
+        # Surface the exclusion count when non-zero so the user/LLM has a
+        # signal that NetCDF files were dropped. Omit when zero to keep the
+        # common-case envelope lean.
+        if excluded_netcdf_count > 0:
+            payload["_excluded_netcdf_count"] = excluded_netcdf_count
+
+        return payload
+
     except (duckdb.BinderException, duckdb.ParserException, duckdb.CatalogException) as e:
-        # LLM-supplied SQL programmer error — recoverable. Surface the same
-        # structured envelope as the singular-file path so the LLM gets
-        # available_columns + fix_hint and can retry in one turn.
-        # _classify_llm_sql_error expects a representative file URL it can
-        # introspect for columns; use the first one.
         code, msg, fix_hint, available_columns = _classify_llm_sql_error(
             e, file_urls[0], query
         )
         logger.warning(
             "LLM SQL error %s across %s parquet files in %s: %s",
-            type(e).__name__,
-            len(file_urls),
-            s3_dir,
-            e,
+            type(e).__name__, len(file_urls), s3_dir, e,
         )
         return _error_payload(
-            code,
-            msg,
+            code, msg,
             fix_hint=fix_hint,
             dir=s3_dir,
-            files=items,
-            file_count=len(items),
+            file_count=len(file_urls),
             file_type="parquet",
             query=query,
             available_columns=available_columns,
@@ -720,32 +680,13 @@ def query_output_files_from_output_selector(
         code, msg, fix_hint = _classify_io_error(e)
         logger.error(
             "IO error %s querying %s parquet files in %s: %s",
-            type(e).__name__,
-            len(file_urls),
-            s3_dir,
-            e,
+            type(e).__name__, len(file_urls), s3_dir, e,
         )
-        if code == "not_found":
-            return _error_payload(
-                code,
-                msg,
-                fix_hint=fix_hint,
-                dir=s3_dir,
-                files=items,
-                file_count=len(items),
-                file_type="parquet",
-                query=query,
-                columns=[],
-                rows=0,
-                data=[],
-            )
         return _error_payload(
-            code,
-            msg,
+            code, msg,
             fix_hint=fix_hint,
             dir=s3_dir,
-            files=items,
-            file_count=len(items),
+            file_count=len(file_urls),
             file_type="parquet",
             query=query,
         )

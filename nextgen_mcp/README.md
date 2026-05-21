@@ -72,15 +72,14 @@ when no credentials are present.
 ## Tools
 
 The MCP tool surface is discovered automatically by clients via `tools/list`.
-The current 11 tools cover:
+The current 9 tools (v0.5.0+) cover:
 
 - Discovery: `list_available_models`, `list_available_dates`,
   `list_available_forecasts`, `list_available_cycles`, `list_available_vpus`,
   `list_available_output_files`
-- Resolution: `resolve_output_file`
-- Query: `query_output_file`, `query_output_file_from_output_selector`,
-  `query_output_files_from_output_selector`
-- Hydrofabric: `lookup_hydrofabric_feature`
+- Query: `query_files_by_selector` (parquet-only; `file_name` or `index`
+  filters to one file, omit both to query all parquet files for the selector)
+- Hydrofabric: `lookup_hydrofabric_feature`, `get_hydrofabric_pmtiles_layers`
 
 All tools return data only - no Plotly figure JSON or map config blobs.
 Charts and maps are the host's responsibility.

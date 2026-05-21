@@ -217,6 +217,27 @@ def _parse_date_or_today(date_str: Optional[str], field_name: str):
     return validated
 
 
+_NULL_LITERALS = frozenset(("none", "null", "nil", "<nil>", "undefined", ""))
+
+
+def _coerce_none_string(v):
+    """Coerce LLM-emitted null-literals to actual ``None``.
+
+    Workshop-class small models sometimes emit string literals like
+    ``"<nil>"`` / ``"None"`` / ``"null"`` when they want to pass ``None``
+    to an ``Optional[str]`` arg. Pydantic's pattern matcher rejects these,
+    the validator-envelope middleware surfaces ``invalid_args:``, and the
+    LLM retries — recovery works but costs a round-trip.
+
+    Apply as a ``BeforeValidator`` to strip common null-literals to actual
+    ``None`` before the pattern check fires. Recovery via the validator
+    envelope still handles novel null-literals outside this allowlist.
+    """
+    if isinstance(v, str) and v.strip().lower() in _NULL_LITERALS:
+        return None
+    return v
+
+
 def _require(**kwargs):
     """Validate that required parameters are not None. Returns error dict or None."""
     missing = [k for k, v in kwargs.items() if v is None]

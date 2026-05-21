@@ -7,7 +7,7 @@ real HTTP transport.
 
 v1 ships a single prompt - ``plot_timeseries`` - driving the
 timeseries-chart workflow against
-``query_output_file_from_output_selector``. These tests lock the prompt
+``query_files_by_selector``. These tests lock the prompt
 shape, the placeholder-default convention (K4), substitution semantics,
 the argument-name parity contract with the underlying selector tool,
 the intentionally narrative-only ``variable`` / ``feature_id`` args,
@@ -61,14 +61,13 @@ PLOT_TIMESERIES_ARG_NAMES = (
     "date",
     "cycle",
     "vpu",
-    "index",
 )
 
 # Hint-bearing argument descriptions. Each description is the
 # user-facing format hint advertised via `Field(description=...)`
 # on the @mcp.prompt arg - derived from the NRDS validation types
 # (`MODELS`, `FORECASTS`, `DATE_PATTERN` in `nextgen_mcp/validations.py`
-# / `nextgen_mcp/utils.py`) and the `query_output_file_from_output_selector`
+# / `nextgen_mcp/utils.py`) and the `query_files_by_selector`
 # field descriptions. When NRDS adds a new model/forecast/vpu, update
 # both the `Field(description=...)` in `mcp_server.py` and this dict
 # in lockstep.
@@ -85,7 +84,6 @@ PLOT_TIMESERIES_DESCRIPTIONS = {
     "date": "yyyy-mm-dd",
     "cycle": "00-23, e.g., 00",
     "vpu": "06, VPU_06, or 3W",
-    "index": "0-based output index, e.g., 0",
 }
 
 
@@ -103,8 +101,10 @@ def _strip_fastmcp_schema_note(desc: str) -> str:
         return ""
     return desc.split("\n\nProvide as a JSON string")[0].strip()
 
-# Args shared with query_output_file_from_output_selector (lock parity).
-OVERLAPPING_ARG_NAMES = ("model", "date", "forecast", "cycle", "vpu", "index")
+# Args shared with query_files_by_selector (lock parity). `index` is
+# intentionally absent — plot_timeseries always queries the full
+# selector and filters via WHERE feature_id in the SQL.
+OVERLAPPING_ARG_NAMES = ("model", "date", "forecast", "cycle", "vpu")
 
 # Args intentionally narrative-only - must NOT appear in the selector
 # tool's schema. Locks the partial-alignment design.
@@ -258,8 +258,8 @@ def test_get_prompt_substitutes_supplied_args_only():
             f"substituted; got: {text!r}"
         )
 
-    # The remaining 6 synthesized hint brackets survive.
-    for name in ("model", "forecast", "date", "cycle", "vpu", "index"):
+    # The remaining 5 synthesized hint brackets survive.
+    for name in ("model", "forecast", "date", "cycle", "vpu"):
         hint_bracket = f"[{PLOT_TIMESERIES_DESCRIPTIONS[name]}]"
         assert hint_bracket in text, (
             f"expected unsubstituted hint bracket {hint_bracket!r} for "
@@ -271,7 +271,6 @@ def test_get_prompt_substitutes_supplied_args_only():
 # Small-model phrasing - plot_timeseries prose must give an unambiguous
 # SQL hint so small Ollama models (qwen, gemma) don't hallucinate a
 # column named "variable" from the phrase "for variable {variable}".
-# Bug observed 2026-05-10 on qwen running the full template.
 # ---------------------------------------------------------------------------
 
 
@@ -346,7 +345,7 @@ def test_plot_timeseries_prose_names_feature_id_as_filter_column():
 
 
 # ---------------------------------------------------------------------------
-# Argument-name parity with query_output_file_from_output_selector
+# Argument-name parity with query_files_by_selector
 # ---------------------------------------------------------------------------
 
 
@@ -359,11 +358,11 @@ def _selector_tool_schema():
 
     tools = _run(go())
     selector = next(
-        (t for t in tools if t.name == "query_output_file_from_output_selector"),
+        (t for t in tools if t.name == "query_files_by_selector"),
         None,
     )
     assert selector is not None, (
-        "query_output_file_from_output_selector missing from tools/list - "
+        "query_files_by_selector missing from tools/list - "
         "the parity contract cannot be evaluated"
     )
     schema = getattr(selector, "inputSchema", None) or {}
@@ -384,7 +383,7 @@ def _plot_timeseries_arg_names():
 def test_overlapping_arg_names_present_on_both_surfaces(arg_name):
     """Each of the 6 overlapping arg names exists on
     ``plot_timeseries`` AND on
-    ``query_output_file_from_output_selector``'s schema. Locks the
+    ``query_files_by_selector``'s schema. Locks the
     contract one arg at a time so a future rename trips a precise test.
     """
     prompt_args = _plot_timeseries_arg_names()
@@ -394,7 +393,7 @@ def test_overlapping_arg_names_present_on_both_surfaces(arg_name):
         f"{arg_name!r} expected on plot_timeseries; got {prompt_args}"
     )
     assert arg_name in selector_args, (
-        f"{arg_name!r} expected on query_output_file_from_output_selector; "
+        f"{arg_name!r} expected on query_files_by_selector; "
         f"got {selector_args}"
     )
 
@@ -404,7 +403,7 @@ def test_narrative_only_args_present_on_prompt_absent_on_selector(arg_name):
     """``variable`` and ``feature_id`` are intentionally narrative-only:
     present on ``plot_timeseries`` (they help the LLM build the SQL
     ``query`` value), absent from
-    ``query_output_file_from_output_selector``'s schema. Locks the
+    ``query_files_by_selector``'s schema. Locks the
     intentional partial-alignment so a future refactor doesn't silently
     drop the narrative args or accidentally promote them.
     """
@@ -417,7 +416,7 @@ def test_narrative_only_args_present_on_prompt_absent_on_selector(arg_name):
     )
     assert arg_name not in selector_args, (
         f"{arg_name!r} unexpectedly present on "
-        f"query_output_file_from_output_selector - narrative-only args "
+        f"query_files_by_selector - narrative-only args "
         f"must not be promoted to selector tool args without review"
     )
 
@@ -687,7 +686,7 @@ def test_discovery_prompt_arg_name_parity_with_underlying_tool(
 ):
     """Each prompt argument name exists on the underlying list_available_*
     tool's input schema. Catches arg-name drift between prompt and tool -
-    the #1 risk in this plan (per feedback_input_output_name_alignment.md).
+    a recurring risk class for slash-prompt surfaces.
     """
     tool_name = DISCOVERY_PROMPT_TO_TOOL[prompt_name]
     tool_args = _tool_schema_properties(tool_name)
@@ -698,13 +697,12 @@ def test_discovery_prompt_arg_name_parity_with_underlying_tool(
 
 
 # ---------------------------------------------------------------------------
-# Query/lookup prompts (Phase 2b) - lookup_feature, query_by_url,
-# resolve_file_by_index, resolve_file_by_name
+# Query/lookup prompts (Phase 2b) - lookup_feature
 #
-# These are query/lookup-archetype prompts (one per query/lookup tool plus
-# the XOR-driven extra variant for resolve_output_file). Tests mirror the
-# Phase 2a discovery harness shape: same five-test pattern parametrized
-# over the prompt set, plus a parallel arg-name parity block.
+# Originally this batch covered lookup_feature, query_by_url,
+# resolve_file_by_index, and resolve_file_by_name. The latter three were
+# deleted in v0.5.0 alongside the query-cluster consolidation (their
+# target tools were removed) — only lookup_feature remains.
 # ---------------------------------------------------------------------------
 
 
@@ -716,44 +714,14 @@ QUERY_LOOKUP_HINTS = {
     "hydrofabric_id": (
         "Hydrofabric identifier to search in columns id and divide_id"
     ),
-    "s3_url": (
-        "Full URL to ONE parquet or netcdf output file "
-        "(s3://... or https://...)"
-    ),
-    "query": "DuckDB SQL query against table output",
-    "index": "0-based output index, e.g., 0",
-    "file_name": "Exact filename (e.g. troute_output_...parquet)",
 }
 
 QUERY_LOOKUP_PROMPTS = {
     "lookup_feature": ("hydrofabric_id",),
-    "query_by_url": ("s3_url", "query"),
-    "resolve_file_by_index": (
-        "model",
-        "date",
-        "forecast",
-        "cycle",
-        "vpu",
-        "index",
-    ),
-    "resolve_file_by_name": (
-        "model",
-        "date",
-        "forecast",
-        "cycle",
-        "vpu",
-        "file_name",
-    ),
 }
 
-# Both resolve_file_* variants target the same underlying tool -
-# resolve_output_file's input schema contains both file_name and index,
-# so the parity test passes for either variant.
 QUERY_LOOKUP_PROMPT_TO_TOOL = {
     "lookup_feature": "lookup_hydrofabric_feature",
-    "query_by_url": "query_output_file",
-    "resolve_file_by_index": "resolve_output_file",
-    "resolve_file_by_name": "resolve_output_file",
 }
 
 
@@ -884,11 +852,7 @@ def test_query_lookup_prompt_arg_name_parity_with_underlying_tool(
 ):
     """Each prompt argument name exists on the underlying query/lookup
     tool's input schema. Catches arg-name drift between prompt and tool -
-    the #1 risk in this plan (per feedback_input_output_name_alignment.md).
-
-    Both resolve_file_by_index and resolve_file_by_name target
-    resolve_output_file; index and file_name both exist on its schema, so
-    parity holds for either variant.
+    a recurring risk class for slash-prompt surfaces.
     """
     tool_name = QUERY_LOOKUP_PROMPT_TO_TOOL[prompt_name]
     tool_args = _tool_schema_properties(tool_name)

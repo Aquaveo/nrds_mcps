@@ -203,7 +203,7 @@ jobs:
           URL: ${{ steps.deploy.outputs.url }}
           # Defensive lower bound; the load-bearing assertions below are
           # the explicit name-absence and name-presence checks.
-          EXPECTED_MIN_TOOLS: '11'
+          EXPECTED_MIN_TOOLS: '9'
         run: |
           set -euo pipefail
           python <<'PY'
@@ -222,13 +222,17 @@ jobs:
               "create_plotly_chart_from_parquet_output_file",
               "build_hydrofabric_feature_map_config",
               "query_hydrofabric_parquet_file",
+              # Query-cluster consolidation: 4 tools collapsed into query_files_by_selector
+              "query_output_file",
+              "query_output_file_from_output_selector",
+              "query_output_files_from_output_selector",
+              "resolve_output_file",
           )
 
-          # Names that must exist (renamed-and-reshaped surface from
-          # the data-only cleanup in v0.2.0, plus multi-file query in v0.4.1).
+          # Names that must exist on the deployed server.
           REQUIRED = (
               "lookup_hydrofabric_feature",
-              "query_output_files_from_output_selector",
+              "query_files_by_selector",
           )
 
           # Prompts (slash-command templates) that must exist on the

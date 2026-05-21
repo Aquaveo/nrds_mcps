@@ -1,10 +1,10 @@
 """Centralized IO configuration for nrds_mcps - timeouts and helper factories.
 
-All outbound network IO (S3 via fsspec, DuckDB httpfs, NetCDF via xarray)
-goes through helpers in this module so a single ``NRDS_HTTP_TIMEOUT_SECONDS``
-env var controls every IO layer's per-request budget.
+All outbound network IO (S3 via fsspec, DuckDB httpfs) goes through helpers
+in this module so a single ``NRDS_HTTP_TIMEOUT_SECONDS`` env var controls
+every IO layer's per-request budget.
 
-Per the 2026-05-10-004 error-handling efficiency plan:
+Conventions:
 - Default 60s, intentionally permissive ("don't break working flows").
 - ``<=0`` env values fall back to default with a warning (defends against
   IaC pipelines inheriting misconfigured parent envs).
@@ -119,21 +119,3 @@ def duckdb_connect_with_httpfs(database: str = ":memory:") -> duckdb.DuckDBPyCon
     return con
 
 
-def open_fsspec_file(url: str, mode: str = "rb"):
-    """Open a remote file with the timeout-configured fsspec client.
-
-    Returns the context manager from ``fsspec.open(...)``. Use as:
-
-        with open_fsspec_file(s3_nc_url) as f:
-            ds = xarray.open_dataset(f, engine="h5netcdf")
-
-    ``fsspec.open()`` returns a lazy ``OpenFile`` wrapper; passing it
-    directly to ``xarray.open_dataset`` does not work. The ``with`` block
-    ensures the underlying file handle uses the timeout-configured client.
-    """
-    return fsspec.open(
-        url,
-        mode=mode,
-        anon=True,
-        config_kwargs=_s3fs_config_kwargs(),
-    )

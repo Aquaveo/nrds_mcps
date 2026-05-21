@@ -5,9 +5,8 @@ import json
 import re
 import pandas as pd
 import duckdb
-import xarray as xr
 
-from ._io_config import HYDROFABRIC_INDEX_URL, duckdb_connect_with_httpfs, open_fsspec_file
+from ._io_config import HYDROFABRIC_INDEX_URL, duckdb_connect_with_httpfs
 
 
 # Per-code sanitized message + fix_hint. NEVER use str(exc) directly - 
@@ -141,10 +140,11 @@ def _is_duckdb_programmer_error(exc: BaseException) -> bool:
     not normalized to a polite envelope. CRITICAL: this guard applies ONLY
     to hardcoded-SQL call sites (e.g. _duckdb_lookup_hydrofabric_feature).
 
-    For LLM-supplied-SQL call sites (query_output_file's `query` arg), use
-    ``_classify_llm_sql_error`` instead - the LLM CAN recover from these
-    if given a structured envelope with the column list as fix_hint, the
-    same pattern InputValidationEnvelopeMiddleware uses for kwarg errors.
+    For LLM-supplied-SQL call sites (query_files_by_selector's `query`
+    arg), use ``_classify_llm_sql_error`` instead - the LLM CAN recover
+    from these if given a structured envelope with the column list as
+    fix_hint, the same pattern InputValidationEnvelopeMiddleware uses
+    for kwarg errors.
     """
     return isinstance(
         exc,
@@ -187,11 +187,11 @@ def _classify_llm_sql_error(
     The LLM-facing envelope from this classifier is the SQL analogue of
     InputValidationEnvelopeMiddleware's `invalid_args` envelope: it gives
     the LLM a structured way to recover in one retry instead of stalling
-    in a thinking loop (as observed with qwen on 2026-05-10).
+    in a thinking loop.
 
-    Callers must use this AT LLM-supplied-SQL call sites only (currently
-    ``query_output_file`` in rest.py). For hardcoded-SQL paths, use the
-    existing ``_is_duckdb_programmer_error`` re-raise guard instead.
+    Use this AT LLM-supplied-SQL call sites only (``query_files_by_selector``).
+    For hardcoded-SQL paths, use ``_is_duckdb_programmer_error`` re-raise
+    instead.
     """
     exc_msg = str(exc)
     if isinstance(exc, duckdb.BinderException):
@@ -245,45 +245,6 @@ def _classify_llm_sql_error(
     # the generic IO classifier so callers always get a typed result.
     code, msg, fix_hint = _classify_io_error(exc)
     return code, msg, fix_hint, []
-
-def _normalize_output_file_url(s3_url: str) -> str:
-    file_url = str(s3_url or "").strip()
-    if file_url.startswith("s3://ciroh-community-ngen-datastream"):
-        file_url = file_url.replace(
-            "s3://ciroh-community-ngen-datastream",
-            "https://ciroh-community-ngen-datastream.s3.us-east-1.amazonaws.com",
-        )
-    return file_url
-
-def _detect_output_file_kind(file_url: str) -> Optional[str]:
-    lower = str(file_url or "").lower()
-    if lower.endswith(".parquet"):
-        return "parquet"
-    if lower.endswith(".nc") or lower.endswith(".nc4"):
-        return "netcdf"
-    return None
-
-def _validate_nrds_output_file_url(bucket: str, file_url: str, allowed_exts: tuple[str, ...]) -> Optional[str]:
-    url = str(file_url or "").strip()
-    if not url:
-        return "Missing required query param: s3_url"
-
-    lower = url.lower()
-
-    if not lower.endswith(allowed_exts):
-        return f"s3_url must point to one file ending in {', '.join(allowed_exts)}"
-
-    allowed_prefixes = (
-        f"s3://{bucket.lower()}/",
-        f"https://{bucket.lower()}.s3.us-east-1.amazonaws.com/",
-    )
-    if not any(lower.startswith(prefix) for prefix in allowed_prefixes):
-        return f"s3_url must point to bucket {bucket}"
-
-    if "/outputs/" not in lower:
-        return "s3_url must point to an NRDS outputs file under /outputs/"
-
-    return None
 
 def _success_payload(**kwargs) -> Dict[str, Any]:
     return {
@@ -424,37 +385,6 @@ def _duckdb_lookup_hydrofabric_feature(
         except Exception:
             pass
 
-def _get_troute_df(s3_nc_url: str) -> pd.DataFrame:
-    """Load the t-route crosswalk DataFrame.
-
-    Uses ``open_fsspec_file`` so the timeout-configured fsspec client
-    reaches the underlying h5netcdf transport. ``xarray.open_dataset``
-    cannot be called directly on a URL with a custom fsspec config - the
-    OpenFile context manager handles that.
-    """
-
-    with open_fsspec_file(s3_nc_url) as f:
-        nc_xarray = xr.open_dataset(f, engine="h5netcdf")
-        nc_df = nc_xarray.to_dataframe()
-        nc_df = nc_df.reset_index()
-
-    return nc_df
-
-def _duckdb_query_parquet(file_url: str, query: str) -> pd.DataFrame:
-    """Execute an arbitrary DuckDB query against a parquet file exposed as temp view `output`."""
-    safe_file_url = file_url.replace("'", "''")
-
-    con = duckdb_connect_with_httpfs()
-    try:
-        con.execute(f"CREATE OR REPLACE TEMP VIEW output AS SELECT * FROM read_parquet('{safe_file_url}')")
-        return con.sql(query).df()
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
-
-
 def _duckdb_query_parquets(file_urls: List[str], query: str) -> pd.DataFrame:
     """Execute an arbitrary DuckDB query across multiple parquet files exposed as one temp view `output`.
 
@@ -491,20 +421,6 @@ def _duckdb_query_parquets(file_urls: List[str], query: str) -> pd.DataFrame:
         except Exception:
             pass
 
-
-def _duckdb_query_netcdf(df: pd.DataFrame , query: str) -> pd.DataFrame:
-    """Execute an arbitrary DuckDB query against a netcdf file exposed as temp view `output`."""
-    
-    con = duckdb.connect(database=":memory:")
-    con.register('tmp_table_nc', df)
-    try:
-        con.execute(f"CREATE OR REPLACE TEMP VIEW output AS SELECT * FROM tmp_table_nc")
-        return con.sql(query).df()
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
 
 def _normalize_date_yyyymmdd(date_str: str | None) -> str | None:
     """Normalize a date string to YYYYMMDD.
