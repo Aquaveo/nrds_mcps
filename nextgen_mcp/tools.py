@@ -1,7 +1,7 @@
 # mcp_server.py
 
 from ._mcp import mcp, LOGGER
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from typing_extensions import Annotated
 from pydantic import Field
 from pydantic.functional_validators import BeforeValidator
@@ -38,16 +38,52 @@ from ._tool_descriptions import QUERY_FILES_BY_SELECTOR_DESCRIPTION
 
 from .middleware._input_validation_middleware import InvalidLLMInputError
 
+
+def _run_list(
+    *,
+    log_name: str,
+    envelope_key: str,
+    required: Optional[Dict[str, Any]],
+    log_fields: Dict[str, Any],
+    call: Callable[[], Any],
+) -> Dict[str, Any]:
+    """Shared boilerplate for list_available_* tool bodies.
+
+    Centralizes the call/completion log lines, the `_require()` envelope
+    return on missing args, and the `_prefer_id_objects()` envelope-key
+    wrapping. Tools that need to normalize args (e.g., `_as_id`,
+    `_parse_date_or_today`) before logging can run their own `_require`
+    up-front and pass `required=None` to skip the re-check here.
+
+    `list_available_dates` does NOT use this helper — its pagination + range
+    filtering need a distinct body shape.
+    """
+    if required is not None:
+        err = _require(**required)
+        if err:
+            return err
+    fields_str = " ".join(f"{k}={v}" for k, v in log_fields.items())
+    LOGGER.info("Tool %s called %s", log_name, fields_str)
+    raw = call()
+    result = _prefer_id_objects(raw, envelope_key)
+    count = (
+        len((result.get(envelope_key) or []))
+        if isinstance(result, dict)
+        else None
+    )
+    LOGGER.info("Tool %s completed %s count=%s", log_name, fields_str, count)
+    return result
+
+
 @mcp.tool(name="list_available_models", description="List available NRDS models. It should not have any arguments when called.")
 def list_available_models_tool() -> Dict[str, Any]:
-    LOGGER.info("Tool list_available_models called")
-    raw = list_available_models()
-    result = _prefer_id_objects(raw, "models")
-    LOGGER.info(
-        "Tool list_available_models completed count=%s",
-        len((result.get("models") or [])) if isinstance(result, dict) else None,
+    return _run_list(
+        log_name="list_available_models",
+        envelope_key="models",
+        required=None,
+        log_fields={},
+        call=list_available_models,
     )
-    return result
 
 @mcp.tool(
     name="list_available_dates",
@@ -156,20 +192,15 @@ def list_available_forecasts_tool(
         ),
     ] = None,
 ) -> Dict[str, Any]:
-    err = _require(model=model)
-    if err:
-        return err
-    LOGGER.info("Tool list_available_forecasts called model=%s date=%s", model, date)
     end_date = _parse_date_or_today(date, "date")
-    raw = list_available_forecasts(model=model, date=end_date.isoformat())
-    result = _prefer_id_objects(raw, "forecasts")
-    LOGGER.info(
-        "Tool list_available_forecasts completed model=%s date=%s count=%s",
-        model,
-        end_date.isoformat(),
-        len((result.get("forecasts") or [])) if isinstance(result, dict) else None,
+    iso_date = end_date.isoformat()
+    return _run_list(
+        log_name="list_available_forecasts",
+        envelope_key="forecasts",
+        required={"model": model},
+        log_fields={"model": model, "date": iso_date},
+        call=lambda: list_available_forecasts(model=model, date=iso_date),
     )
-    return result
 
 
 @mcp.tool(
@@ -197,25 +228,16 @@ def list_available_cycles_tool(
     if err:
         return err
     forecast_id = _as_id(forecast)
-    LOGGER.info(
-        "Tool list_available_cycles called model=%s date=%s forecast=%s",
-        model,
-        date,
-        forecast_id,
+    iso_date = _parse_date_or_today(date, "date").isoformat()
+    return _run_list(
+        log_name="list_available_cycles",
+        envelope_key="cycles",
+        required=None,
+        log_fields={"model": model, "date": iso_date, "forecast": forecast_id},
+        call=lambda: list_available_cycles(
+            model=model, date=iso_date, forecast=forecast_id
+        ),
     )
-    end_date = _parse_date_or_today(date, "date")
-    raw = list_available_cycles(
-        model=model, date=end_date.isoformat(), forecast=forecast_id
-    )
-    result = _prefer_id_objects(raw, "cycles")
-    LOGGER.info(
-        "Tool list_available_cycles completed model=%s date=%s forecast=%s count=%s",
-        model,
-        end_date.isoformat(),
-        forecast_id,
-        len((result.get("cycles") or [])) if isinstance(result, dict) else None,
-    )
-    return result
 
 
 @mcp.tool(
@@ -252,30 +274,21 @@ def list_available_vpus_tool(
     if err:
         return err
     forecast_id = _as_id(forecast)
-    LOGGER.info(
-        "Tool list_available_vpus called model=%s date=%s forecast=%s cycle=%s",
-        model,
-        date,
-        forecast_id,
-        cycle,
+    iso_date = _parse_date_or_today(date, "date").isoformat()
+    return _run_list(
+        log_name="list_available_vpus",
+        envelope_key="vpus",
+        required=None,
+        log_fields={
+            "model": model,
+            "date": iso_date,
+            "forecast": forecast_id,
+            "cycle": cycle,
+        },
+        call=lambda: list_available_vpus(
+            model=model, date=iso_date, forecast=forecast_id, cycle=cycle
+        ),
     )
-    end_date = _parse_date_or_today(date, "date")
-    raw = list_available_vpus(
-        model=model,
-        date=end_date.isoformat(),
-        forecast=forecast_id,
-        cycle=cycle,
-    )
-    result = _prefer_id_objects(raw, "vpus")
-    LOGGER.info(
-        "Tool list_available_vpus completed model=%s date=%s forecast=%s cycle=%s count=%s",
-        model,
-        end_date.isoformat(),
-        forecast_id,
-        cycle,
-        len((result.get("vpus") or [])) if isinstance(result, dict) else None,
-    )
-    return result
 
 
 @mcp.tool(
@@ -328,38 +341,30 @@ def list_available_output_files_tool(
     err = _require(model=model, forecast=forecast, vpu=vpu)
     if err:
         return err
-    LOGGER.info(
-        "Tool list_available_output_files called model=%s date=%s forecast=%s cycle=%s vpu=%s ensemble=%s",
-        model,
-        date,
-        _as_id(forecast),
-        cycle,
-        _as_id(vpu),
-        ensemble,
-    )
-    end_date = _parse_date_or_today(date, "date")
+    iso_date = _parse_date_or_today(date, "date").isoformat()
     params: Dict[str, Any] = {
         "model": model,
-        "date": end_date.isoformat(),
+        "date": iso_date,
         "forecast": _as_id(forecast),
         "cycle": cycle,
         "vpu": _as_id(vpu),
     }
     if ensemble is not None:
         params["ensemble"] = int(ensemble)
-
-    raw = list_available_output_files(data=params)
-    result = _prefer_id_objects(raw, "files")
-    LOGGER.info(
-        "Tool list_available_output_files completed model=%s date=%s forecast=%s cycle=%s vpu=%s count=%s",
-        model,
-        end_date.isoformat(),
-        params["forecast"],
-        cycle,
-        params["vpu"],
-        len((result.get("files") or [])) if isinstance(result, dict) else None,
+    return _run_list(
+        log_name="list_available_output_files",
+        envelope_key="files",
+        required=None,
+        log_fields={
+            "model": params["model"],
+            "date": params["date"],
+            "forecast": params["forecast"],
+            "cycle": params["cycle"],
+            "vpu": params["vpu"],
+            "ensemble": ensemble,
+        },
+        call=lambda: list_available_output_files(data=params),
     )
-    return result
 
 
 @mcp.tool(
