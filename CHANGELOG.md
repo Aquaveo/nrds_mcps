@@ -7,6 +7,12 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-21
+
+### Changed
+
+- **Extracted shared `_run_list` helper for the 5 symmetric `list_available_*` tool bodies** (PR #22). The five list tools (`list_available_models`, `list_available_dates`, `list_available_forecasts`, `list_available_cycles`, `list_available_vpus`) had near-identical Pydantic-validated arg coercion + `logic.py` dispatch + envelope wrap shapes. Lifted the common shape into a single helper; each tool body now only specifies the level name + the kwargs to forward. Pure refactor — no contract change, no behavior change. Per-tool descriptions, signatures, and output envelopes are byte-for-byte identical to v0.5.1.
+
 ## [0.5.1] - 2026-05-20
 
 ### Fixed
