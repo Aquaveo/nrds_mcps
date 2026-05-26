@@ -27,6 +27,7 @@ import fsspec
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SECONDS = 60
+_DEFAULT_DUCKDB_MEMORY_LIMIT_MB = 512
 
 # Hydrofabric index parquet - the canonical lookup table for flowpath /
 # divide / etc. feature metadata. Single source of truth here so the
@@ -59,6 +60,30 @@ def _read_timeout_env() -> int:
 
 
 HTTP_TIMEOUT_SECONDS: int = _read_timeout_env()
+
+
+def _read_memory_limit_env() -> int:
+    raw = os.getenv("NRDS_DUCKDB_MEMORY_LIMIT_MB", str(_DEFAULT_DUCKDB_MEMORY_LIMIT_MB))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "NRDS_DUCKDB_MEMORY_LIMIT_MB=%r is not a valid integer; using default %dMB",
+            raw,
+            _DEFAULT_DUCKDB_MEMORY_LIMIT_MB,
+        )
+        return _DEFAULT_DUCKDB_MEMORY_LIMIT_MB
+    if value <= 0:
+        logger.warning(
+            "NRDS_DUCKDB_MEMORY_LIMIT_MB=%d is <=0; using default %dMB",
+            value,
+            _DEFAULT_DUCKDB_MEMORY_LIMIT_MB,
+        )
+        return _DEFAULT_DUCKDB_MEMORY_LIMIT_MB
+    return value
+
+
+DUCKDB_MEMORY_LIMIT_MB: int = _read_memory_limit_env()
 
 
 def _s3fs_config_kwargs() -> dict:
@@ -116,6 +141,8 @@ def duckdb_connect_with_httpfs(database: str = ":memory:") -> duckdb.DuckDBPyCon
         con.execute("INSTALL httpfs")
         con.execute("LOAD httpfs")
     con.execute(f"SET http_timeout = {HTTP_TIMEOUT_SECONDS}")
+    con.execute(f"SET memory_limit = '{DUCKDB_MEMORY_LIMIT_MB}MB'")
+    con.execute("SET threads = 2")
     return con
 
 

@@ -145,12 +145,12 @@ jobs:
             --image="$IMAGE" \
             --region=us-central1 \
             --port=9000 \
-            --memory=2Gi \
-            --cpu=1 \
+            --memory=4Gi \
+            --cpu=2 \
             --min-instances=0 \
             --max-instances=2 \
             --timeout=3600 \
-            --concurrency=80 \
+            --concurrency=10 \
             --allow-unauthenticated \
             --set-env-vars=MCP_PORT=9000,MCP_HOST=0.0.0.0,MCP_TRANSPORT=streamable-http,NRDS_LOG_LEVEL=INFO,ALLOWED_ORIGINS='*' \
             --startup-probe=httpGet.path=/health,httpGet.port=9000,initialDelaySeconds=10,timeoutSeconds=5,periodSeconds=5,failureThreshold=12 \
