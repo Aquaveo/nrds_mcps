@@ -147,8 +147,8 @@ jobs:
             --port=9000 \
             --memory=4Gi \
             --cpu=2 \
-            --min-instances=0 \
-            --max-instances=2 \
+            --min-instances=2 \
+            --max-instances=8 \
             --timeout=3600 \
             --concurrency=10 \
             --allow-unauthenticated \
