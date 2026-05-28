@@ -34,7 +34,10 @@ from .logic import (
     lookup_hydrofabric_feature as _lookup_hydrofabric_feature,
     get_hydrofabric_pmtiles_layers
 )
-from ._tool_descriptions import QUERY_FILES_BY_SELECTOR_DESCRIPTION
+from ._tool_descriptions import (
+    LIST_AVAILABLE_OUTPUT_FILES_DESCRIPTION,
+    QUERY_FILES_BY_SELECTOR_DESCRIPTION,
+)
 
 from .middleware._input_validation_middleware import InvalidLLMInputError
 
@@ -293,7 +296,7 @@ def list_available_vpus_tool(
 
 @mcp.tool(
     name="list_available_output_files",
-    description="List available output files for a given model, date, forecast, cycle, and VPU (accepts id or label, including subregion VPUs). Optional ensemble member for applicable forecast.",
+    description=LIST_AVAILABLE_OUTPUT_FILES_DESCRIPTION,
 )
 def list_available_output_files_tool(
     model: Annotated[MODELS, Field(description="Model id - call list_available_models to discover valid values")] = None,
@@ -437,9 +440,9 @@ def query_files_by_selector_tool(
         Optional[int],
         Field(
             description=(
-                "Optional filter to one file by 0-based index into the parquet-only "
-                "sorted file list. NetCDF files do not consume index slots. Mutually "
-                "exclusive with file_name."
+                "Optional filter to one file by 0-based index into the sorted "
+                "parquet file list for the selector. Mutually exclusive with "
+                "file_name."
             ),
             ge=0,
         ),

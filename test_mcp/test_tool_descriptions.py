@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import re
 
-from nextgen_mcp._tool_descriptions import QUERY_FILES_BY_SELECTOR_DESCRIPTION
+from nextgen_mcp._tool_descriptions import (
+    LIST_AVAILABLE_OUTPUT_FILES_DESCRIPTION,
+    QUERY_FILES_BY_SELECTOR_DESCRIPTION,
+)
 
 
 def test_query_files_by_selector_description_positive_invariants() -> None:
@@ -22,9 +25,6 @@ def test_query_files_by_selector_description_positive_invariants() -> None:
     # Names the parquet-only constraint
     assert "parquet only" in lower
 
-    # Names the error class the LLM may receive on NetCDF-target calls
-    assert "unsupported_format" in desc
-
     # Names the provenance columns the LLM can reference in SQL
     assert "filename" in desc
     assert "source_path" in desc
@@ -32,9 +32,6 @@ def test_query_files_by_selector_description_positive_invariants() -> None:
     # Names the file_name / index filter args so the LLM knows the filter shape
     assert "file_name" in desc
     assert "index" in desc
-
-    # Names _excluded_netcdf_count so the LLM knows to look for it
-    assert "_excluded_netcdf_count" in desc
 
 
 def test_query_files_by_selector_description_negative_invariants() -> None:
@@ -64,3 +61,25 @@ def test_query_files_by_selector_description_negative_invariants() -> None:
     assert "cfe_nom" not in desc
     assert "short_range" not in desc
     assert not re.search(r"\bVPU_\d+", desc)
+
+    # No "netcdf" mentions — weak quantized models token-match on the word
+    # regardless of polarity ("NetCDF unsupported" reads as "supports NetCDF"
+    # to a Q4 4.7B-class model). Anchor positive-only ("Parquet only").
+    # Runtime envelope keys like `_excluded_netcdf_count` keep working; we
+    # just stop teaching the LLM their name from the description.
+    assert "netcdf" not in desc.lower()
+    assert "unsupported_format" not in desc
+
+
+def test_list_available_output_files_description_anchor() -> None:
+    """list_available_output_files description must carry a 'parquet only'
+    anchor and contain no 'netcdf' tokens — same reasoning as the
+    query_files_by_selector negative invariants. Without an explicit
+    parquet anchor on a generically named 'output files' tool, weak
+    quantized models route NetCDF-shaped prompts here.
+    """
+    desc = LIST_AVAILABLE_OUTPUT_FILES_DESCRIPTION
+    lower = desc.lower()
+
+    assert "parquet only" in lower
+    assert "netcdf" not in lower
