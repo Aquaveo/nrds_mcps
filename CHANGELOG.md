@@ -7,6 +7,10 @@ Image tags follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stripped "NetCDF" tokens from tool descriptions; added "Parquet only" anchor to `list_available_output_files`.** The descriptions for `query_files_by_selector` (`_tool_descriptions.py`), its `index` arg (`tools.py:444`), and `list_available_output_files` (`tools.py:296`) had two related leaks: (1) `query_files_by_selector`'s description mentioned "NetCDF" four times in negative-constraint framing (naming `unsupported_format`, `_excluded_netcdf_count`, and the mixed-format selector behavior), with one more mention in the `index` Field description, and (2) `list_available_output_files`'s description had no parquet-only anchor at all — its name reads as generic "output files." Weak quantized models (observed against `SimonPu/GLM-4.7-Flash:Q4_K_M`) token-match on the format name regardless of polarity, so "NetCDF unsupported" reads as "supports NetCDF" to a Q4 4.7B-class model. The model then assigned the NetCDF role to the unanchored `list_available_output_files` tool and emitted user-facing replies routing NetCDF prompts to it — directly contradicting the v0.5.0 parquet-only decision. Tightened all three description sites: hoist "Parquet only." up next to the opener of `query_files_by_selector`; append "Parquet only." to `list_available_output_files`; drop the "NetCDF files do not consume index slots" sentence from the `index` Field description; drop all "netcdf" / `unsupported_format` / `_excluded_netcdf_count` mentions from description prose. The runtime envelope keys keep working — we just stop teaching the LLM their names from the system prompt. `test_tool_descriptions.py` updated: drop the positive `unsupported_format` / `_excluded_netcdf_count` assertions; add a negative `"netcdf" not in desc.lower()` assertion plus a positive `"parquet only"` assertion for `list_available_output_files`.
+
 ## [0.5.2] - 2026-05-21
 
 ### Changed
