@@ -79,7 +79,7 @@ PLOT_TIMESERIES_ARG_NAMES = (
 PLOT_TIMESERIES_DESCRIPTIONS = {
     "variable": "flow / velocity / streamflow",
     "feature_id": "feature id, e.g., 1019290",
-    "model": "cfe_nom / lstm / routing_only",
+    "model": "cfe_nom / lstm / lstm_0 / routing_only",
     "forecast": "short_range / medium_range / analysis_assim_extend",
     "date": "yyyy-mm-dd",
     "cycle": "00-23, e.g., 00",
@@ -443,7 +443,7 @@ def test_narrative_only_args_present_on_prompt_absent_on_selector(arg_name):
 # both the tool's Field(description=...) AND this map AND the @mcp.prompt
 # arg description.
 DISCOVERY_HINTS = {
-    "model": "cfe_nom / lstm / routing_only",
+    "model": "cfe_nom / lstm / lstm_0 / routing_only",
     "date": "yyyy-mm-dd",
     "forecast": "short_range / medium_range / analysis_assim_extend",
     "cycle": "00-23, e.g., 00",

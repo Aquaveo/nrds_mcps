@@ -31,7 +31,7 @@ def plot_timeseries(
 
     All 7 arguments are ``required: true`` with no Python-level
     defaults; each carries a ``Field(description=...)`` advertising
-    the valid format or enum (e.g., ``cfe_nom / lstm / routing_only``,
+    the valid format or enum (e.g., ``cfe_nom / lstm / lstm_0 / routing_only``,
     ``yyyy-mm-dd``). Calling ``prompts/get(name, {})`` with empty args
     deliberately raises a ``-32602 Invalid arguments`` error - the
     standard MCP wire shape used by third-party servers.

@@ -9,11 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 # Shared type aliases - used in pydantic field annotations and tool signatures.
 FORECASTS = Literal["short_range", "medium_range", "analysis_assim_extend"]
-MODELS = Literal["cfe_nom", "lstm", "routing_only"]
+MODELS = Literal["cfe_nom", "lstm", "lstm_0", "routing_only"]
 
 # LLM-facing hint strings for tool/prompt descriptions. Phrased to match
 # what the normalizers below actually accept - keep them in lockstep.
-MODEL_HINT = "cfe_nom / lstm / routing_only"
+MODEL_HINT = "cfe_nom / lstm / lstm_0 / routing_only"
 FORECAST_HINT = "short_range / medium_range / analysis_assim_extend"
 DATE_HINT = "yyyy-mm-dd"
 CYCLE_HINT = "00-23, e.g., 00"
